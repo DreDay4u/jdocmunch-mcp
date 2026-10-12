@@ -1,6 +1,6 @@
 # jdocmunch-mcp
 
-**Version:** 1.145.2 |
+**Version:** 1.145.3 |
 **Tests:** `PYTHONPATH=src python -m pytest tests/ -q`
 
 ⚠ **`python -m pytest`, not bare `pytest`**, matching the suite rule in
@@ -10,9 +10,8 @@ into a different environment, and without `PYTHONPATH` the INSTALLED package
 shadows `src/`. ⚠⚠ **Neither form reproduces CI** — see "reproduce CI" under
 Standing operational notes; this one is the edit loop, not the gate.
 
-## Unreleased (after 1.145.2) — #163: `**/` in `path_glob` matches zero directories
+## v1.145.3 — #163: `**/` in `path_glob` matches zero directories
 
-⚠ **Fold this into the next dated section at the bump; it is not a release.**
 @vishalhabib99 reported and fixed it: `path_glob` was plain `fnmatch`, so the
 schemas' own example `api/**/*.md` missed `api/auth.md`. The helper is
 `storage/doc_store.py::path_glob_matches`, used at four sites.
@@ -112,74 +111,7 @@ bind), so this box cannot show it failing without the fix; that rests on the
 contributor's run and Linux CI. ⚠ It writes its edit after a fixed 3 s sleep.
 If it flakes on a slow runner, move the write inside the poll loop.
 
-## v1.145.0 — an incremental index spent its time on files that had not changed
-
-**One report became seven fixes.** @LuigiNicaPRO profiled an incremental
-`index_local` on 3,771 files that cost about 28 s whether 1 file changed or 50
-(#140). Split under policy 1 into #140 / #141 / #142 / #143, plus #146 found
-while they benchmarked #144, plus #151 found by us while profiling #142.
-#138 (@sdjrdriver, `tokens_saved` stuck at 0) shipped alongside. They
-independently benchmarked #145 on the real corpus, and those figures are in the
-CHANGELOG, credited.
-
-⚠⚠ **A profile names FUNCTIONS, not passes. Count the reads yourself.** The
-reporter saw 73,814 `_loader` calls as one cost; they were two full passes
-(BM25 stats + the #117 sidecar rebuild) through the same loader. And "sidecar
-parsed 4x" was 3 full parses plus header-only reads. A spy on
-`Path.open`/`builtins.open` that records the caller settles it in one run.
-
-⚠⚠ **Measure what dominates BEFORE designing the clever fix.** #142 proposed a
-BM25 delta. The profile put 25.6 s of 48.5 s in per-section `open`s and 5.3 s
-in tokenizing, so reading each file once took the cost and the delta was
-SHELVED: it can't be exact without storing the uncapped `df` plus a total
-tie-break, which moves ranking. ⚠ Found and NOT fixed: `df` is capped at 5,000
-and on this repo the cut falls inside a 1,848-term tie at count 1, so section
-order decides which terms survive. A full and an incremental build of the
-same files can differ.
-
-⚠⚠ **A memo of what is on disk is trusted only on (size, `mtime_ns`)**
-(`embeddings/cache.py::_KEY_MEMO`, #140). The #107 coverage report exists to
-describe the DISK, so a view passed along from the start of the run would
-report the wrong thing. A size-only check misses a same-size rewrite, and a
-test proves it. ⚠ A cache on the long-lived `_content_loader` could serve old
-bytes after a save, so the #142 whole-file cache is scoped to the stats pass,
-where kept files cannot change.
-
-⚠⚠ **An append equals a rewrite ONLY on a matching identity with no prune**
-(#141). The rewrite is how rotation (#109) and `prune` (#107) retract rows.
-It also already kept superseded rows, so the append changes no file size. My
-own issue text claimed otherwise and was corrected on the thread.
-
-⚠⚠ **A path fix is a MIGRATION** (#146). Every root now resolves through
-`storage/paths.py`, with a ratchet test against a new `".doc-index"` literal.
-Correcting the path alone would have re-embedded every CLI user's corpus. So
-`cache.load` reads the old home-root copy (base_path None + env set only), and
-the pass rewrites it next to the index. ⚠⚠ **`cache.identity` must NOT fall
-back:** it would let #141's append path match the home header and append
-headerless rows to a new file. A test pins both halves.
-
-⚠ **A property checked on an in-memory object says nothing about the reloaded
-one** (#138). `Section.to_dict` drops `content`, so the old byte-mass audit
-(1.0000 ratio) passed on fresh sections while every reloaded index summed to 0.
-The fix raises self-reported telemetry, and it shipped with the basis change
-disclosed in CHANGELOG and TOKEN_SAVINGS.md.
-
-⚠ **#152 CLOSED not-planned (jjg, 2026-09-25), reopen invited.**
-`related_persist.lookup` parses the whole `related.json`: 1.99 s, and 220 MB
-resident if memoized, so a memo is the wrong fix. One-section-per-line with
-offsets is the design if it's ever needed. Closed because only
-`get_related_sections` calls it and there's no record of it being called: 0 of
-28 jdocmunch calls across 373 local transcripts, and no per-tool data from
-users exists, since the counter sends token totals only. ⚠ **Don't reopen on
-this evidence. Reopen on a user's latency report.** And the related graph's semantic half measured **86 s** at 36k
-sections on this box with random 16-dim vectors. That's unverified on real
-vectors and on the reporter's machine, so it is NOT a claim until measured.
-
-⚠ **Merging:** the agent's `gh pr merge --admin` is refused by the permission
-classifier. Hand jjg the cmd.exe line, and name the PR number: I once gave the
-issue number, which returns "Could not resolve to a PullRequest".
-
-## Lessons from rotated entries (v1.116.0–v1.144.0, lifted 2026-08-29 / 2026-08-30 / 2026-09-17 / 2026-09-19 / 2026-09-21 / 2026-09-24 / 2026-10-06)
+## Lessons from rotated entries (v1.116.0–v1.145.0, lifted 2026-08-29 / 2026-08-30 / 2026-09-17 / 2026-09-19 / 2026-09-21 / 2026-09-24 / 2026-10-06 / 2026-10-12)
 
 ⚠⚠ **These outlived the releases that produced them.** Each line names the
 version whose full narrative now lives in `docs/CLAUDE-history.md`. **Read the
@@ -188,6 +120,9 @@ entry that earned no reusable rule got no line.
 
 **Releasing**
 
+- ⚠ **The agent's `gh pr merge` is refused by the permission classifier.**
+  Hand jjg the cmd.exe line, and name the PR number: an issue number returns
+  "Could not resolve to a PullRequest". (v1.145.0)
 - ⚠⚠ **A docs-only commit after a build still stales the artifacts.**
   `ROADMAP.md` and `CHANGELOG.md` ship in the sdist, so 1.143.0 was rebuilt
   and CI re-read on the later SHA before upload. Release from the SHA the
@@ -217,6 +152,27 @@ entry that earned no reusable rule got no line.
 
 **Writing a fix**
 
+- ⚠⚠ **Measure what dominates BEFORE designing the clever fix.** #142
+  proposed a BM25 delta. The profile put 25.6 s of 48.5 s in per-section
+  `open`s, so reading each file once took the cost and the delta was SHELVED:
+  it can't be exact without storing the uncapped `df` plus a total tie-break,
+  which moves ranking. ⚠ Found and NOT fixed: `df` is capped at 5,000 and on
+  this repo the cut falls inside a 1,848-term tie at count 1, so a full and
+  an incremental build of the same files can differ. (v1.145.0)
+- ⚠⚠ **A memo of what is on disk is trusted only on (size, `mtime_ns`)**
+  (`embeddings/cache.py::_KEY_MEMO`, #140). A size-only check misses a
+  same-size rewrite. ⚠ A cache on the long-lived `_content_loader` could
+  serve old bytes after a save, so the #142 whole-file cache is scoped to the
+  stats pass, where kept files cannot change. (v1.145.0)
+- ⚠⚠ **An append equals a rewrite ONLY on a matching identity with no
+  prune** (#141). The rewrite is how rotation (#109) and `prune` (#107)
+  retract rows. (v1.145.0)
+- ⚠⚠ **A path fix is a MIGRATION** (#146). Every root resolves through
+  `storage/paths.py`, with a ratchet against a new `".doc-index"` literal.
+  `cache.load` reads the old home-root copy so no corpus is re-embedded.
+  ⚠⚠ **`cache.identity` must NOT fall back:** it would let #141's append
+  path match the home header and append headerless rows to a new file.
+  (v1.145.0)
 - ⚠⚠ **Two producers of one key that render it differently: resolve it on
   the NEW producer.** `index_local` emits `mtime` as naive local time and has
   since 1.142.0, so that format is a promise. `index_repo` emits an
@@ -357,6 +313,10 @@ entry that earned no reusable rule got no line.
 
 **Testing and measurement**
 
+- ⚠⚠ **A profile names FUNCTIONS, not passes. Count the reads yourself.**
+  73,814 `_loader` calls read as one cost and were two full passes through
+  the same loader. A spy on `Path.open` / `builtins.open` that records the
+  caller settles it in one run. (v1.145.0)
 - ⚠ **When a seam moves, the test stubs must follow it.** 16 patch sites
   stubbed `fetch_head_commit_sha` after it stopped issuing the request, so
   the real HTTP call was live and those tests passed for the wrong reason.
@@ -401,6 +361,13 @@ entry that earned no reusable rule got no line.
 
 **Claims and evidence**
 
+- ⚠ **#152 is CLOSED not-planned (jjg, 2026-09-25), reopen invited.**
+  `related_persist.lookup` parses the whole `related.json` (1.99 s, 220 MB
+  resident if memoized), but only `get_related_sections` calls it and there
+  is no record of that tool being called. **Reopen on a user's latency
+  report, not on this evidence.** The related graph's semantic half measured
+  86 s at 36k sections with random vectors; that is unverified on real ones
+  and is NOT a claim. (v1.145.0)
 - ⚠⚠ **A count with no time basis gets one supplied by the reader, and the
   reader picks "per request."** A stable schema block is paid at cache-read
   rates after the first hit, so a bare `schema_tokens_avoided` overstated the
@@ -1050,7 +1017,7 @@ path ([[feedback_fixture_query_corpus_pollution]]).
 ## Release history
 
 ⚠ **This file keeps the THREE newest dated `## vX.Y.Z` sections. Everything
-older is in `docs/CLAUDE-history.md`** — v1.144.0 and v1.143.0 rotated there 2026-10-06, v1.142.0 on 2026-09-24, v1.141.0 on 2026-09-21, v1.140.0 and v1.139.1 on 2026-09-19, v1.139.0 and v1.138.0 on 2026-09-17, v1.137.1 on 2026-09-01, v1.137.0 on 2026-08-30,
+older is in `docs/CLAUDE-history.md`** — v1.145.0 rotated there 2026-10-12, v1.144.0 and v1.143.0 on 2026-10-06, v1.142.0 on 2026-09-24, v1.141.0 on 2026-09-21, v1.140.0 and v1.139.1 on 2026-09-19, v1.139.0 and v1.138.0 on 2026-09-17, v1.137.1 on 2026-09-01, v1.137.0 on 2026-08-30,
 v1.116.0 through v1.135.0 on 2026-08-29, v1.115.0 and earlier on 2026-07-25. `CHANGELOG.md` covers most of
 them, but 1.67.0-1.92.0 and 1.96.0 exist ONLY in the history file.
 

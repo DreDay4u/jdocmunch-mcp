@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [1.145.3] - 2026-10-12 - `**/` in `path_glob` required at least one directory
+
 ### Fixed - `**/` in `path_glob` required at least one directory (#163)
 
 Reported and fixed by [@vishalhabib99](https://github.com/vishalhabib99).
