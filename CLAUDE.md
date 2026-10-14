@@ -10,6 +10,22 @@ into a different environment, and without `PYTHONPATH` the INSTALLED package
 shadows `src/`. ⚠⚠ **Neither form reproduces CI** — see "reproduce CI" under
 Standing operational notes; this one is the edit loop, not the gate.
 
+## Unreleased (after 1.145.4) — #169: one path check per document per posting build
+
+⚠ **Fold this into the next dated section at the bump; it is not a release.**
+@outoftheblue9's #169 (`5b46444`): `PostingIndex.build` runs inside the
+content loader's `sweep()`, so each document's path is resolved once per
+build, not once per section (first search 4,006 → 1,440 ms, their
+measurement on this repo).
+
+⚠⚠ **The memo's LIFETIME is the security argument.** The loader lives on an
+index in the process-wide `_INDEX_CACHE`. A verdict kept past the build
+would let a check made before a symlink appeared authorise a read after it.
+The memo is per `load_index` call, thread-local, and cleared in `finally`.
+Don't move it onto `DocStore` or the index. ⚠ #168's sidecar path builds
+through `RowSet.build`, outside the sweep, so a memoized verdict never feeds
+a persisted row. Keep it that way if the two paths are ever merged.
+
 ## v1.145.4 — #165 / #166: corpus rules on the two refresh paths
 
 @randyhbh reported both. The watcher's `_corpus_filters` got discovery's
