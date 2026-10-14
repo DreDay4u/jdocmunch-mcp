@@ -86,6 +86,235 @@ turns the sidecar off. The stored `bm25_stats` block gains
 
 `tests/test_posting_sidecar.py` (56).
 
+### Changed - the Read interceptor no longer pays a whole CLI startup to say nothing
+
+Claude Code fires `jdocmunch-mcp hook-pretooluse` as a fresh process on **every
+`Read`**, and that process does very little: parse a JSON payload, test an
+extension, stat a file, print at most one line. Everything else it cost was
+startup: `verify_package_integrity()` (which calls
+`importlib.metadata.packages_distributions()`, reading metadata for every
+installed distribution, and caches nothing), the package `__init__`, and the
+argparse tree.
+
+`main()` now dispatches a bare `hook-pretooluse` before any of them.
+
+Measured with `benchmarks/hook_path/measure.py`: 15 fresh processes per arm,
+interleaved, 0 failed runs, Windows, Python 3.12, on this repository at v1.145.3
+(14,588 sections). The record is `benchmarks/hook_path/results.json`, which
+names the commit and the `src/` tree it timed and the baseline it timed against
+(91e24a8, v1.145.5). The arm is named for each figure, and all are medians.
+`python -m jdocmunch_mcp hook-pretooluse` against a real index, reading a real
+indexed file: **987.7 ms** on the baseline (`hook_before`), **69.1 ms** with this
+change (`hook_after`), on a floor of 38.7 ms for an interpreter that does
+nothing (`interpreter`). One `verify_package_integrity()` call alone is 226.5 ms
+(`integrity_check_after`). ⚠ The two hook runs do not print the same hint: the
+baseline's hook knew nothing of the index and printed a shorter line (240 bytes
+against 358), so the comparison is of the whole hook, not of one function.
+
+⚠⚠ **The argparse tree was the SMALL half, and that inverts the premise this
+started from.** On its own it would not have justified a second dispatch path.
+
+⚠⚠ **`hook-posttooluse` deliberately does NOT get the fast path.** It fires on
+Edit/Write rather than Read, it debounces, marks cross-process reindex state
+and spawns a worker that then indexes a file, so the startup is a small part of
+what it costs. And it is the hook that EXECUTES something: if exactly one hook
+path keeps the supply-chain integrity check, it is the one that spawns a child
+process.
+
+⚠⚠ **The integrity check not running on the Read path is the one behavioural
+difference, and it is deliberate.** Its only output is a stderr print, and
+Claude Code sends stderr from a hook that exits 0 to the debug log -- "never the
+transcript, and Claude never sees it". The check still runs on every other
+subcommand, `hook-posttooluse` among them. ⚠ The guard is an EXACT one-argument
+match, so `hook-pretooluse --help`, a typo'd extra argument and every other
+subcommand still go through argparse unchanged.
+
+⚠ **No logic is duplicated.** `_DOC_EXTENSIONS`, `_MIN_SIZE_BYTES`,
+`_emit_additional_context` and `run_pretooluse` MOVED into a new
+`cli/_hook_probe.py` whose
+module-level imports are `json`, `os` and `sys`; `cli/hooks.py` imports them
+back out, so `watch.py` and every existing test keep working against one
+definition. Two copies of `run_pretooluse` would drift on what the hint says and
+when, which is behaviour, not cosmetics. `pathlib`, `hashlib` and `subprocess`
+now load inside the reindex functions that use them, and `pathlib` also left
+`cli/main.py`'s module scope.
+
+⚠ **`__version__` is now resolved on first access (PEP 562 module
+`__getattr__`), not in the package body.** `cli/main.py`'s `_LazyVersionAction`
+already claimed to protect "the lazy `importlib.metadata` lookup in the package
+`__init__`" -- that laziness did not exist, so the Action was deferring an
+f-string in front of an eager lookup every import paid.
+
+`tests/test_pretooluse_fast_path.py` compares the fast path with a direct call
+of `run_pretooluse` -- the function the argparse branch dispatches to, minus
+argparse and the integrity check -- as real subprocesses: exit code, stdout
+bytes, stderr bytes. It pins that the fast path is what actually ran, and that
+`hook-posttooluse` still runs the integrity check.
+`test_cli_output_encoding.py::test_main_calls_it_first` was rewritten from a
+character-offset proxy to an AST walk: it asserted the reconfigure call sits in
+the first 200 characters of the function body, which a comment explaining the
+new branch broke while the branch itself called it on its first line.
+
+### Changed - the console script and `python -m jdocmunch_mcp` no longer import the MCP SDK
+
+`pyproject`'s `jdocmunch-mcp` entry point moved from `jdocmunch_mcp.server:main`
+to `jdocmunch_mcp.cli.main:main`. The argparse tree now lives in a module whose
+module-level imports are stdlib only, so `serve` is the one branch that reaches
+`..server` and with it the SDK. In the same record, `import jdocmunch_mcp.server`
+takes 686.7 ms on the baseline (`import_server_before`) and 691.9 ms on this
+checkout (`import_server_after`) -- unchanged, because `serve` still pays for the
+SDK -- while `import jdocmunch_mcp.cli.main` takes 9.2 ms on this checkout
+(`import_cli_main_after`).
+
+`src/jdocmunch_mcp/__main__.py` dispatches through `cli.main:main` too. It
+imported `.server` before, so `python -m jdocmunch_mcp` -- the command the
+watch login service runs -- loaded the SDK on exactly the path the console
+script no longer did. `tests/test_main_module_entry.py` runs a real `-m`
+subprocess and fails if an SDK module is imported.
+
+⚠ `asyncio` is NOT at module scope: only `serve` and `watch` use it. ⚠
+`--version` is a custom lazy `argparse.Action`: the built-in one interpolates
+its string at `add_argument` time, which resolves `__version__` on every
+invocation. It prints to stdout and exits 0, matching the built-in --
+`parser.exit(message=...)` writes to STDERR and would have silently broken
+anyone piping `jdocmunch-mcp --version`.
+
+`from jdocmunch_mcp.server import main` keeps working, along with
+`_force_utf8_stdio` and `_load_paths_from_arg`, per the 1.x contract.
+`tests/test_cli_import_cost.py` ratchets the shape rather than the timing, so a
+stray top-level import fails the suite.
+
+### Fixed - the auto-reindex worker was spawned by a name the hook shell cannot resolve
+
+`run_posttooluse` handed `subprocess.Popen` the bare string `jdocmunch-mcp`.
+That is a PATH lookup, and the PATH a hook inherits is the one thing we already
+knew does not work: `init._hook_invocation` resolves `shutil.which` to an
+absolute path before writing the hook command into settings.json precisely
+because Claude Code's hook shell carries neither `~/.local/bin` nor a user venv
+nor a pipx shim (#39). The hook process therefore started fine and its child
+did not, on exactly the installs that needed the absolute path -- and the
+`except` swallowed it, so the only symptom was an index that quietly stopped
+tracking edits. Reported and fixed first in jcodemunch-mcp; same shape here.
+
+The spawn now goes through `_self_invocation()`: the absolute path this process
+was launched with when its basename is our entry point, otherwise
+`[sys.executable, "-m", "jdocmunch_mcp"]`, which needs no PATH lookup at all.
+Real-subprocess tests run `python -m jdocmunch_mcp` and check that
+`hook-reindex` is in its subcommand table and is dispatched.
+
+A RELATIVE `sys.argv[0]` is never executed, and the `os.path.isabs` check that
+enforces it is load-bearing rather than tidy: a relative path is re-resolved
+against the hook's cwd, which is the checked-out and untrusted repository the
+agent is editing, so a file named `jdocmunch-mcp` added by a hostile commit
+would otherwise become the thing we run on every Edit. `os.path.exists` alone
+is not a substitute -- a planted file exists.
+
+The `except` stays non-fatal, because a background refresh is never worth
+failing a hook for, but it now records an opt-in breadcrumb
+(`JDOCMUNCH_HOOK_LOG`, the same switch jdoc#76's other breadcrumbs use), since a
+permanently failing spawn was previously invisible. Default behaviour is
+unchanged. Its clause is `(OSError, ValueError)`; `FileNotFoundError` is an
+`OSError` subclass and stays covered, and `ValueError` is what `Popen` raises
+for an unusable argv. The debounce stamp is deliberately not rolled back on a
+failed spawn: a PATH failure is permanent, and the one transient case --
+spawn refused under memory pressure -- is the condition jdoc#76's throttle
+exists to avoid making worse.
+
+`tests/test_hook_spawn_invocation.py` carries an AST ratchet over every call
+that starts a process (`subprocess.Popen`/`run`/`call`/`check_call`/
+`check_output` and `os.exec*`/`os.spawn*`) in `cli/hooks.py`: it fails if the
+literal command name appears in the arguments in any shape -- a list literal, a
+concatenation, an f-string, or a name bound to such a literal in the same
+function -- and it is tested against each spelling and against the correct
+`sys.executable -m` shape. A source guard pins the `isabs` check, and a test
+pins that a failed spawn does not roll back the debounce stamp. No tool, schema
+or INDEX_VERSION change; no CLI flag added or removed.
+
+### Fixed - valid JSON that is not a valid payload crashed the hook handlers
+
+The hint's delivery channel (JSON `hookSpecificOutput.additionalContext` on
+stdout) is not part of this entry: it shipped in 1.140.0 as #129, credited
+there. This entry is the crash alone.
+
+`run_pretooluse`'s try/except covered only `json.load`, so five valid-JSON
+shapes -- `tool_input` as a string, a top-level null/list/number, and
+`file_path` as a number -- crashed with a traceback. A non-zero hook exit is a
+non-blocking error whose FIRST LINE OF STDERR the transcript shows, so those
+were putting "Traceback (most recent call last):" in front of users.
+
+`run_posttooluse` read `data.get("tool_input", {}).get("file_path", "")` and
+crashed on the same shapes, so guarding the reported handler alone would have
+left its neighbour broken. Every `run_*` handler in `cli/hooks.py` and
+`cli/_hook_probe.py` is now wrapped in `_guarded`, which swallows anything
+unexpected, returns 0 and leaves the opt-in `JDOCMUNCH_HOOK_LOG` breadcrumb, so
+a failure is observable rather than silent. The Read hook's breadcrumb tests the
+environment switch with `os` alone and imports the writer only when logging is
+on, so the leaf module's import set is unchanged.
+
+`tests/test_hook_payload_shapes.py` does not name a handler. It enumerates every
+`run_*` function in the hook modules, requires each to be guarded, cross-checks
+them against the `hook-*` branches in `cli/main.py`, and runs each over every
+shape both in process and through a real `python -m jdocmunch_mcp` subprocess,
+so a handler added later is in scope the moment it exists.
+
+### Added - the hint only fires when it would actually help
+
+Steering a reader to `search_sections` for a file no index holds sends them
+somewhere that cannot answer; steering them at a STALE index is worse, because
+it answers with superseded content while the `Read` they were about to do would
+have returned the right bytes. `_index_state` resolves a path to one of `fresh`,
+`stale`, `unverified` or `unindexed` using only stdlib: it reads the tiny
+`<name>.summary.json` sidecars for `source_root` (most specific root wins, since
+indexes nest), then looks at the file's mirror copy.
+
+⚠⚠ **Staleness is decided by CONTENT, with the mtime and the size only as cheap
+pre-filters.** A source that is not newer than its mirror and has the mirror's
+size is `fresh` without reading either: two stats, which is the common case. A
+source that IS newer proves nothing on its own: indexing is keyed on a content
+hash, and an incremental pass does not rewrite the mirror of a file whose hash
+did not change, so a `touch`, a `git stash pop` or a revert to identical bytes
+leaves the source permanently newer than a mirror that is still correct. And a
+source of a different SIZE is compared whatever its mtime, because a changed
+file can arrive with an older or preserved mtime (`cp -p`, `rsync -t`, a tar
+extract). Only a source whose bytes differ from the mirror is `stale`. ⚠ The
+bound that remains: an edit that keeps both the size and an older-or-equal mtime
+is not seen. With a 273,907-byte file touched forward so the content comparison
+runs, the whole hook takes 68.1 ms (`hook_after_touched`) against 69.1 ms for the
+same file untouched (`hook_after`), in the harness described above.
+
+⚠ **Some formats are mirrored as PREPROCESSED text**, not verbatim: `.mdx`,
+`.ipynb`, `.html`/`.htm`, `.xml`/`.svg`/`.xhtml`, `.tscn`/`.tres`, `.jsonc` and
+`.json` are converted before storage, so a byte comparison would call every
+newer one stale. For those the gate never claims staleness: a newer source is
+`unverified`, and `unverified` says nothing. The verbatim set is tied to
+`preprocess_content` by a test, and the comparison replays the two ways a
+verbatim mirror still differs (a leading BOM is dropped, and invalid UTF-8
+becomes U+FFFD). A sidecar whose JSON is not an object is skipped instead of
+aborting the scan for every healthy index.
+
+`fresh` steers. `stale` reports the staleness and steers NOWHERE, naming real
+remedies: the `jdocmunch-mcp index-file <path>` CLI subcommand, the
+`index_local` tool, and the `watch` daemon. (There is no `index_file` MCP tool,
+and a test now checks every tool a hint names against the server's tool list.)
+`unverified` and `unindexed` say nothing. ⚠ The hook deliberately does NOT
+reindex: `incremental_save` runs `compute_corpus_stats` over the whole corpus
+with a content loader regardless of how small the edited file was, and `Read` is
+a far hotter trigger than `Edit` -- the same unbounded fan-out that jdoc#76
+records as having "took down a 16 GB machine". It also could not help the read
+that triggered it.
+
+⚠⚠ **Where `DOC_INDEX_PATH` must be set.** The gate finds the store from the
+hook process's own environment: `DOC_INDEX_PATH` if it is set there, else
+`~/.doc-index`. Hooks run in the environment Claude Code runs in, not in the MCP
+server's. A user who sets `DOC_INDEX_PATH` only in the `env` of the MCP client's
+server entry, which reaches `serve` and nothing else, will find the hint gone
+silent where it used to fire on every large doc file, because the hook looks in
+the default store, finds no index and reads the file as `unindexed`. Set it in
+the environment Claude Code is launched from (a shell profile, for example) and
+the hooks see the same store as the server. This is disclosed rather than
+changed: the hook reading its own environment is what keeps it free of the
+server's configuration.
+
 ## [1.145.5] - 2026-10-14 - a cold search checks each document's path once
 
 ### Changed - a cold search checks each document's path once, not once per section (#169)
