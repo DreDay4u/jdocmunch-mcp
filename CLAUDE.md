@@ -140,6 +140,9 @@ entry that earned no reusable rule got no line.
 - ⚠ **The agent's `gh pr merge` is refused by the permission classifier.**
   Hand jjg the cmd.exe line, and name the PR number: an issue number returns
   "Could not resolve to a PullRequest". (v1.145.0)
+  ⚠ **Clear the token as `set "GITHUB_TOKEN="`, quoted.** In cmd.exe,
+  `set GITHUB_TOKEN= && gh ...` sets it to the space before `&&`, and gh
+  then refuses the keyring. Hit on the #167 merge line. (Unreleased)
 - ⚠⚠ **A docs-only commit after a build still stales the artifacts.**
   `ROADMAP.md` and `CHANGELOG.md` ship in the sdist, so 1.143.0 was rebuilt
   and CI re-read on the later SHA before upload. Release from the SHA the
