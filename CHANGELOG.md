@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [1.145.4] - 2026-10-14 - two refresh paths re-admitted files the corpus rules exclude
+
 ### Fixed - two refresh paths re-admitted files the corpus rules exclude (#165, #166)
 
 Reported by [@randyhbh](https://github.com/randyhbh), with a repro for each

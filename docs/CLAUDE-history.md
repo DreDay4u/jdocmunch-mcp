@@ -21,6 +21,42 @@ should already be in the brief; if it is not, that is the bug.
 this file.** Those are the only facts in it with a guaranteed expiry date, and
 several entries below carry them. Run the query.
 
+## Rotated 2026-10-14 — v1.145.1
+
+Moved out of `CLAUDE.md` on 2026-10-14 when v1.145.4 became a fourth dated
+section. What it earned was lifted into "Lessons from rotated entries" first:
+a cap applied after the arithmetic does not bound it, one shared `awatch`
+makes one root's failure every root's, and the permission test's Windows
+skip and fixed sleep.
+
+## v1.145.1 — the watcher: one root's failure was every root's (#155 / #156 / #159 / #160)
+
+@Indie-Siggi reported #154 / #155 / #156 already split, and fixed #155 (#157,
+`ignore_permission_denied=True`) and #156 (#158, backoff after an `awatch`
+error). Both merged 2026-10-06. ⚠ **#154 is still open**: the watcher follows
+symlinks out of an indexed root, and neither PR changes that.
+
+⚠⚠ **A cap applied AFTER the arithmetic does not bound the arithmetic.**
+#158 computed `1.0 * 2 ** (n - 1)` and then took `min()` with the ceiling. At
+n = 1025 the int can't convert to float, and the `OverflowError` came from
+inside the `except Exception` handler, so the watcher exited (#159). Green on
+all 12 jobs: no test runs a streak that long. **Read a backoff for its
+1,000th iteration, not its third.** The delay now lives in
+`watch.py::_error_retry_delay`, which a test can call at any streak length.
+
+⚠⚠ **Every root shares ONE `awatch` call, so one root's failure is every
+root's.** That is the mechanism behind #155 and #160 both. ⚠ Rediscovery ran
+only in `_monitor`, whose first pass is one interval after the cycle starts; a
+cycle that fails at once cancels it first. So an error streak never
+rediscovered, and a vanished root (`awatch` raises `FileNotFoundError`) was
+retried forever (#160, on master before #158 too). One discovery pass now
+follows each retry wait.
+
+⚠ `tests/test_watch_permission_denied.py` SKIPS on Windows (mode 000 does not
+bind), so this box cannot show it failing without the fix; that rests on the
+contributor's run and Linux CI. ⚠ It writes its edit after a fixed 3 s sleep.
+If it flakes on a slow runner, move the write inside the poll loop.
+
 ## Rotated 2026-10-12 — v1.145.0
 
 Moved out of `CLAUDE.md` on 2026-10-12 when v1.145.3 became a fourth dated

@@ -1,6 +1,6 @@
 # jdocmunch-mcp
 
-**Version:** 1.145.3 |
+**Version:** 1.145.4 |
 **Tests:** `PYTHONPATH=src python -m pytest tests/ -q`
 
 ⚠ **`python -m pytest`, not bare `pytest`**, matching the suite rule in
@@ -10,9 +10,8 @@ into a different environment, and without `PYTHONPATH` the INSTALLED package
 shadows `src/`. ⚠⚠ **Neither form reproduces CI** — see "reproduce CI" under
 Standing operational notes; this one is the edit loop, not the gate.
 
-## Unreleased (after 1.145.3) — #165 / #166: corpus rules on the two refresh paths
+## v1.145.4 — #165 / #166: corpus rules on the two refresh paths
 
-⚠ **Fold this into the next dated section at the bump; it is not a release.**
 @randyhbh reported both. The watcher's `_corpus_filters` got discovery's
 `local/<name>` handle, so the stored patterns loaded as nothing (#165). The
 PostToolUse hook re-indexed any doc-extension file (#166); `index_file` now
@@ -100,35 +99,7 @@ was measured (28 before, 2 after). Sync into a Linux-side venv
 under WSL by default. ⚠ Two tests fail there for an unrelated reason: a
 Windows worktree's `.git` pointer is a `C:/` path that Linux git can't read.
 
-## v1.145.1 — the watcher: one root's failure was every root's (#155 / #156 / #159 / #160)
-
-@Indie-Siggi reported #154 / #155 / #156 already split, and fixed #155 (#157,
-`ignore_permission_denied=True`) and #156 (#158, backoff after an `awatch`
-error). Both merged 2026-10-06. ⚠ **#154 is still open**: the watcher follows
-symlinks out of an indexed root, and neither PR changes that.
-
-⚠⚠ **A cap applied AFTER the arithmetic does not bound the arithmetic.**
-#158 computed `1.0 * 2 ** (n - 1)` and then took `min()` with the ceiling. At
-n = 1025 the int can't convert to float, and the `OverflowError` came from
-inside the `except Exception` handler, so the watcher exited (#159). Green on
-all 12 jobs: no test runs a streak that long. **Read a backoff for its
-1,000th iteration, not its third.** The delay now lives in
-`watch.py::_error_retry_delay`, which a test can call at any streak length.
-
-⚠⚠ **Every root shares ONE `awatch` call, so one root's failure is every
-root's.** That is the mechanism behind #155 and #160 both. ⚠ Rediscovery ran
-only in `_monitor`, whose first pass is one interval after the cycle starts; a
-cycle that fails at once cancels it first. So an error streak never
-rediscovered, and a vanished root (`awatch` raises `FileNotFoundError`) was
-retried forever (#160, on master before #158 too). One discovery pass now
-follows each retry wait.
-
-⚠ `tests/test_watch_permission_denied.py` SKIPS on Windows (mode 000 does not
-bind), so this box cannot show it failing without the fix; that rests on the
-contributor's run and Linux CI. ⚠ It writes its edit after a fixed 3 s sleep.
-If it flakes on a slow runner, move the write inside the poll loop.
-
-## Lessons from rotated entries (v1.116.0–v1.145.0, lifted 2026-08-29 / 2026-08-30 / 2026-09-17 / 2026-09-19 / 2026-09-21 / 2026-09-24 / 2026-10-06 / 2026-10-12)
+## Lessons from rotated entries (v1.116.0–v1.145.1, lifted 2026-08-29 / 2026-08-30 / 2026-09-17 / 2026-09-19 / 2026-09-21 / 2026-09-24 / 2026-10-06 / 2026-10-12 / 2026-10-14)
 
 ⚠⚠ **These outlived the releases that produced them.** Each line names the
 version whose full narrative now lives in `docs/CLAUDE-history.md`. **Read the
@@ -142,7 +113,7 @@ entry that earned no reusable rule got no line.
   "Could not resolve to a PullRequest". (v1.145.0)
   ⚠ **Clear the token as `set "GITHUB_TOKEN="`, quoted.** In cmd.exe,
   `set GITHUB_TOKEN= && gh ...` sets it to the space before `&&`, and gh
-  then refuses the keyring. Hit on the #167 merge line. (Unreleased)
+  then refuses the keyring. Hit on the #167 merge line. (v1.145.4)
 - ⚠⚠ **A docs-only commit after a build still stales the artifacts.**
   `ROADMAP.md` and `CHANGELOG.md` ship in the sdist, so 1.143.0 was rebuilt
   and CI re-read on the later SHA before upload. Release from the SHA the
@@ -172,6 +143,17 @@ entry that earned no reusable rule got no line.
 
 **Writing a fix**
 
+- ⚠⚠ **A cap applied AFTER the arithmetic does not bound the arithmetic.**
+  #158 computed `1.0 * 2 ** (n - 1)` and then took `min()` with the ceiling.
+  At n = 1025 the int can't convert to float, and the `OverflowError` came
+  from inside the `except Exception` handler, so the watcher exited (#159).
+  **Read a backoff for its 1,000th iteration, not its third.** The delay
+  lives in `watch.py::_error_retry_delay`, callable at any streak length.
+  (v1.145.1)
+- ⚠⚠ **Every root shares ONE `awatch` call, so one root's failure is every
+  root's** (#155, #160). A cycle that fails at once cancels `_monitor`
+  before its first rediscovery, so a vanished root was retried forever. One
+  discovery pass now follows each retry wait. (v1.145.1)
 - ⚠⚠ **Measure what dominates BEFORE designing the clever fix.** #142
   proposed a BM25 delta. The profile put 25.6 s of 48.5 s in per-section
   `open`s, so reading each file once took the cost and the delta was SHELVED:
@@ -333,6 +315,10 @@ entry that earned no reusable rule got no line.
 
 **Testing and measurement**
 
+- ⚠ `tests/test_watch_permission_denied.py` SKIPS on Windows (mode 000 does
+  not bind), so the #155 fix rests on Linux CI here. It writes its edit
+  after a fixed 3 s sleep; if it flakes on a slow runner, move the write
+  inside the poll loop. (v1.145.1)
 - ⚠⚠ **A profile names FUNCTIONS, not passes. Count the reads yourself.**
   73,814 `_loader` calls read as one cost and were two full passes through
   the same loader. A spy on `Path.open` / `builtins.open` that records the
@@ -1037,7 +1023,7 @@ path ([[feedback_fixture_query_corpus_pollution]]).
 ## Release history
 
 ⚠ **This file keeps the THREE newest dated `## vX.Y.Z` sections. Everything
-older is in `docs/CLAUDE-history.md`** — v1.145.0 rotated there 2026-10-12, v1.144.0 and v1.143.0 on 2026-10-06, v1.142.0 on 2026-09-24, v1.141.0 on 2026-09-21, v1.140.0 and v1.139.1 on 2026-09-19, v1.139.0 and v1.138.0 on 2026-09-17, v1.137.1 on 2026-09-01, v1.137.0 on 2026-08-30,
+older is in `docs/CLAUDE-history.md`** — v1.145.1 rotated there 2026-10-14, v1.145.0 on 2026-10-12, v1.144.0 and v1.143.0 on 2026-10-06, v1.142.0 on 2026-09-24, v1.141.0 on 2026-09-21, v1.140.0 and v1.139.1 on 2026-09-19, v1.139.0 and v1.138.0 on 2026-09-17, v1.137.1 on 2026-09-01, v1.137.0 on 2026-08-30,
 v1.116.0 through v1.135.0 on 2026-08-29, v1.115.0 and earlier on 2026-07-25. `CHANGELOG.md` covers most of
 them, but 1.67.0-1.92.0 and 1.96.0 exist ONLY in the history file.
 
