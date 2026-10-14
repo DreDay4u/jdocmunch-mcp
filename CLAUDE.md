@@ -1,6 +1,6 @@
 # jdocmunch-mcp
 
-**Version:** 1.145.4 |
+**Version:** 1.145.5 |
 **Tests:** `PYTHONPATH=src python -m pytest tests/ -q`
 
 ⚠ **`python -m pytest`, not bare `pytest`**, matching the suite rule in
@@ -10,9 +10,8 @@ into a different environment, and without `PYTHONPATH` the INSTALLED package
 shadows `src/`. ⚠⚠ **Neither form reproduces CI** — see "reproduce CI" under
 Standing operational notes; this one is the edit loop, not the gate.
 
-## Unreleased (after 1.145.4) — #169: one path check per document per posting build
+## v1.145.5 — #169: one path check per document per posting build
 
-⚠ **Fold this into the next dated section at the bump; it is not a release.**
 @outoftheblue9's #169 (`5b46444`): `PostingIndex.build` runs inside the
 content loader's `sweep()`, so each document's path is resolved once per
 build, not once per section (first search 4,006 → 1,440 ms, their
@@ -69,53 +68,7 @@ followed by `*/` made one in 90 of 4,000 globs. It passed by luck.
 `file_pattern` there goes through `fnmatch` at several sites. Hand it to that
 repo's own session; this one does not write there.
 
-## v1.145.2 — #154: the watcher walked through directory symlinks
-
-Reported by @Indie-Siggi. On Linux inotify and under polling, a recursive
-`awatch` follows directory links before any filter runs; indexing never does.
-Measured on inotify, watchfiles 1.3.0: a root of 2 directories with a link to
-`/usr/share` held 2,476 watches. Now `watch.py::_watch_directories` enumerates
-real directories and `awatch` gets them with `recursive=False`. macOS and
-Windows native recursion are unchanged (`_native_recursion_is_safe`).
-
-⚠⚠ **The census prunes by ONE rule, "not a directory link", and that is the
-design.** Discovery also skips dot-directories, SKIP_PATTERNS and ignored
-paths. Pruning less than discovery costs watches; pruning more loses updates.
-jcm's first draft skipped every dot-directory and would have blinded its
-watcher to `.github/`. Don't "optimise" the census toward discovery's rules
-without a test that every discovered directory is still in it.
-
-⚠⚠ **A non-recursive watch does not know about a new directory, and a file
-written before its watch exists raises NO event.** Three parts, each with a
-test that fails without it: a directory add/remove re-arms; directories new
-since the last ARMED set are read once after the first yield
-(`yield_on_timeout` makes that yield arrive within a second); the rediscovery
-pass compares the directory set too. ⚠ `armed_census` moves only at that
-first yield. Moving it when the census is taken loses the catch-up for a
-cycle whose `awatch` failed before arming.
-
-⚠ **One shared TOKEN with a fixture query is enough to fail the replay gate.**
-This entry's CHANGELOG draft said "directory links" throughout and demoted
-the 'broken links' golden (nDCG 0.926 against 0.95, recall 1.0). Reworded to
-"symlinks"; goldens and gate untouched. Run `tests/test_replay_metrics.py`
-after every CHANGELOG edit, not only at release.
-
-⚠ **A PR that reads `BLOCKED` with every job green may have NO `license/cla`
-status at all.** CLA Assistant did not fire when #162 opened (count=0 on the
-head, no bot comment). A GET to
-`https://cla-assistant.io/check/jgravelle/jdocmunch-mcp?pullRequest=<n>`
-posted `license/cla=success` within seconds, with no push and no CI re-run.
-Measured once, on our own PR; unverified for a contributor who has not
-signed, where absent still means NOT SIGNED.
-
-⚠ **WSL Ubuntu on this box runs Linux tests**, which is how the inotify count
-was measured (28 before, 2 after). Sync into a Linux-side venv
-(`UV_PROJECT_ENVIRONMENT=$HOME/.venvs/<name> uv sync --group dev --python
-3.12`) and set `WATCHFILES_FORCE_POLLING=false`, because watchfiles polls
-under WSL by default. ⚠ Two tests fail there for an unrelated reason: a
-Windows worktree's `.git` pointer is a `C:/` path that Linux git can't read.
-
-## Lessons from rotated entries (v1.116.0–v1.145.1, lifted 2026-08-29 / 2026-08-30 / 2026-09-17 / 2026-09-19 / 2026-09-21 / 2026-09-24 / 2026-10-06 / 2026-10-12 / 2026-10-14)
+## Lessons from rotated entries (v1.116.0–v1.145.2, lifted 2026-08-29 / 2026-08-30 / 2026-09-17 / 2026-09-19 / 2026-09-21 / 2026-09-24 / 2026-10-06 / 2026-10-12 / 2026-10-14)
 
 ⚠⚠ **These outlived the releases that produced them.** Each line names the
 version whose full narrative now lives in `docs/CLAUDE-history.md`. **Read the
@@ -124,6 +77,16 @@ entry that earned no reusable rule got no line.
 
 **Releasing**
 
+- ⚠ **One shared TOKEN with a fixture query is enough to fail the replay
+  gate.** A CHANGELOG draft saying "directory links" demoted the 'broken
+  links' golden (nDCG 0.926 against 0.95). Reworded; goldens and gate
+  untouched. Run `tests/test_replay_metrics.py` after every CHANGELOG edit.
+  (v1.145.2)
+- ⚠ **A PR reading `BLOCKED` with every job green may have NO `license/cla`
+  status.** A GET to
+  `https://cla-assistant.io/check/jgravelle/jdocmunch-mcp?pullRequest=<n>`
+  posted it within seconds on our own #162. For a contributor who hasn't
+  signed, absent still means NOT SIGNED. (v1.145.2)
 - ⚠ **The agent's `gh pr merge` is refused by the permission classifier.**
   Hand jjg the cmd.exe line, and name the PR number: an issue number returns
   "Could not resolve to a PullRequest". (v1.145.0)
@@ -159,6 +122,18 @@ entry that earned no reusable rule got no line.
 
 **Writing a fix**
 
+- ⚠⚠ **The watcher's directory census prunes by ONE rule, "not a directory
+  link"** (#154). Discovery also skips dot-directories, SKIP_PATTERNS and
+  ignored paths. Pruning more than the census loses updates; jcm's first
+  draft would have blinded its watcher to `.github/`. Don't move it toward
+  discovery's rules without a test that every discovered directory stays.
+  (v1.145.2)
+- ⚠⚠ **A non-recursive watch doesn't know about a new directory, and a file
+  written before its watch exists raises NO event.** Three parts, each
+  tested: a directory add/remove re-arms, directories new since the last
+  ARMED set are read once after the first yield, and rediscovery compares
+  the directory set. `armed_census` moves only at that first yield.
+  (v1.145.2)
 - ⚠⚠ **A cap applied AFTER the arithmetic does not bound the arithmetic.**
   #158 computed `1.0 * 2 ** (n - 1)` and then took `min()` with the ceiling.
   At n = 1025 the int can't convert to float, and the `OverflowError` came
@@ -331,6 +306,11 @@ entry that earned no reusable rule got no line.
 
 **Testing and measurement**
 
+- ⚠ **WSL Ubuntu on this box runs Linux tests.** Sync a Linux-side venv
+  (`UV_PROJECT_ENVIRONMENT=$HOME/.venvs/<name> uv sync --group dev --python
+  3.12`) and set `WATCHFILES_FORCE_POLLING=false`, since watchfiles polls
+  under WSL by default. Two git-pointer tests fail there because a Windows
+  worktree's `.git` is a `C:/` path. (v1.145.2)
 - ⚠ `tests/test_watch_permission_denied.py` SKIPS on Windows (mode 000 does
   not bind), so the #155 fix rests on Linux CI here. It writes its edit
   after a fixed 3 s sleep; if it flakes on a slow runner, move the write
@@ -1039,7 +1019,7 @@ path ([[feedback_fixture_query_corpus_pollution]]).
 ## Release history
 
 ⚠ **This file keeps the THREE newest dated `## vX.Y.Z` sections. Everything
-older is in `docs/CLAUDE-history.md`** — v1.145.1 rotated there 2026-10-14, v1.145.0 on 2026-10-12, v1.144.0 and v1.143.0 on 2026-10-06, v1.142.0 on 2026-09-24, v1.141.0 on 2026-09-21, v1.140.0 and v1.139.1 on 2026-09-19, v1.139.0 and v1.138.0 on 2026-09-17, v1.137.1 on 2026-09-01, v1.137.0 on 2026-08-30,
+older is in `docs/CLAUDE-history.md`** — v1.145.2 and v1.145.1 rotated there 2026-10-14, v1.145.0 on 2026-10-12, v1.144.0 and v1.143.0 on 2026-10-06, v1.142.0 on 2026-09-24, v1.141.0 on 2026-09-21, v1.140.0 and v1.139.1 on 2026-09-19, v1.139.0 and v1.138.0 on 2026-09-17, v1.137.1 on 2026-09-01, v1.137.0 on 2026-08-30,
 v1.116.0 through v1.135.0 on 2026-08-29, v1.115.0 and earlier on 2026-07-25. `CHANGELOG.md` covers most of
 them, but 1.67.0-1.92.0 and 1.96.0 exist ONLY in the history file.
 

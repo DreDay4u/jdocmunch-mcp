@@ -72,7 +72,7 @@ class PostingIndex:
         load, since Section.to_dict drops content). When the loader is
         absent, content is skipped silently — title and summary still index.
 
-        v1.146.0: when the loader offers a ``sweep()`` scope (the one
+        v1.145.5: when the loader offers a ``sweep()`` scope (the one
         ``DocStore.load_index`` injects does), the build runs inside it, so
         each document's path is checked once for this build rather than once
         per section. The scope ends with the build; see ``load_index``.

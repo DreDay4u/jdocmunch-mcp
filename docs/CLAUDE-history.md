@@ -21,6 +21,59 @@ should already be in the brief; if it is not, that is the bug.
 this file.** Those are the only facts in it with a guaranteed expiry date, and
 several entries below carry them. Run the query.
 
+## Rotated 2026-10-14 — v1.145.2
+
+Moved out of `CLAUDE.md` on 2026-10-14 when v1.145.5 became a fourth dated
+section. What it earned was lifted into "Lessons from rotated entries" first:
+the census's one pruning rule, the three parts a non-recursive watch needs,
+the replay gate's token sensitivity, the CLA recheck URL, and the WSL recipe.
+
+## v1.145.2 — #154: the watcher walked through directory symlinks
+
+Reported by @Indie-Siggi. On Linux inotify and under polling, a recursive
+`awatch` follows directory links before any filter runs; indexing never does.
+Measured on inotify, watchfiles 1.3.0: a root of 2 directories with a link to
+`/usr/share` held 2,476 watches. Now `watch.py::_watch_directories` enumerates
+real directories and `awatch` gets them with `recursive=False`. macOS and
+Windows native recursion are unchanged (`_native_recursion_is_safe`).
+
+⚠⚠ **The census prunes by ONE rule, "not a directory link", and that is the
+design.** Discovery also skips dot-directories, SKIP_PATTERNS and ignored
+paths. Pruning less than discovery costs watches; pruning more loses updates.
+jcm's first draft skipped every dot-directory and would have blinded its
+watcher to `.github/`. Don't "optimise" the census toward discovery's rules
+without a test that every discovered directory is still in it.
+
+⚠⚠ **A non-recursive watch does not know about a new directory, and a file
+written before its watch exists raises NO event.** Three parts, each with a
+test that fails without it: a directory add/remove re-arms; directories new
+since the last ARMED set are read once after the first yield
+(`yield_on_timeout` makes that yield arrive within a second); the rediscovery
+pass compares the directory set too. ⚠ `armed_census` moves only at that
+first yield. Moving it when the census is taken loses the catch-up for a
+cycle whose `awatch` failed before arming.
+
+⚠ **One shared TOKEN with a fixture query is enough to fail the replay gate.**
+This entry's CHANGELOG draft said "directory links" throughout and demoted
+the 'broken links' golden (nDCG 0.926 against 0.95, recall 1.0). Reworded to
+"symlinks"; goldens and gate untouched. Run `tests/test_replay_metrics.py`
+after every CHANGELOG edit, not only at release.
+
+⚠ **A PR that reads `BLOCKED` with every job green may have NO `license/cla`
+status at all.** CLA Assistant did not fire when #162 opened (count=0 on the
+head, no bot comment). A GET to
+`https://cla-assistant.io/check/jgravelle/jdocmunch-mcp?pullRequest=<n>`
+posted `license/cla=success` within seconds, with no push and no CI re-run.
+Measured once, on our own PR; unverified for a contributor who has not
+signed, where absent still means NOT SIGNED.
+
+⚠ **WSL Ubuntu on this box runs Linux tests**, which is how the inotify count
+was measured (28 before, 2 after). Sync into a Linux-side venv
+(`UV_PROJECT_ENVIRONMENT=$HOME/.venvs/<name> uv sync --group dev --python
+3.12`) and set `WATCHFILES_FORCE_POLLING=false`, because watchfiles polls
+under WSL by default. ⚠ Two tests fail there for an unrelated reason: a
+Windows worktree's `.git` pointer is a `C:/` path that Linux git can't read.
+
 ## Rotated 2026-10-14 — v1.145.1
 
 Moved out of `CLAUDE.md` on 2026-10-14 when v1.145.4 became a fourth dated

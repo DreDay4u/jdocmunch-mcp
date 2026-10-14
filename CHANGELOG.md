@@ -2,8 +2,11 @@
 
 ## [Unreleased]
 
-### Changed - a cold search checks each document's path once, not once per section
+## [1.145.5] - 2026-10-14 - a cold search checks each document's path once
 
+### Changed - a cold search checks each document's path once, not once per section (#169)
+
+Contributed by [@outoftheblue9](https://github.com/outoftheblue9).
 The first `search_sections` in a process builds the posting index by reading
 every section body back from the content mirror. Each read went through
 `_safe_content_path`, which resolves the path to make sure it stays inside the

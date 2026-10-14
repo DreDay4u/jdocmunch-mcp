@@ -1072,7 +1072,7 @@ class DocStore:
         (``content_dir.resolve()``, computed once) so the root is not resolved
         again on every call. ⚠ The CANDIDATE is still resolved every time: that
         is the escape guard, since a symlink inside the content dir can point
-        outside it and only resolving the candidate catches it. (v1.146.0: a
+        outside it and only resolving the candidate catches it. (v1.145.5: a
         posting-index build calls this once per document rather than once per
         section, and keeps the answers only for that build; see the loader in
         ``load_index``.)
@@ -1481,7 +1481,7 @@ class DocStore:
         except (OSError, ValueError):
             resolved_root = None
 
-        # v1.146.0: a pass that reads every section -- the posting-index build
+        # v1.145.5: a pass that reads every section -- the posting-index build
         # on a cold search -- resolved the same few documents once per
         # SECTION. `_loader.sweep()` lets one such pass reuse its own
         # containment verdicts, one per document.
