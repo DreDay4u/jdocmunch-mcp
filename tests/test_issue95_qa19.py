@@ -160,9 +160,11 @@ def test_drive_relative_handle_never_escapes_the_store(tmp_path, monkeypatch):
         ("", False), ("a/b", False), ("a\\b", False), (None, False),
     ],
 )
-def test_component_policy_is_one_shared_rule(component, safe):
+def test_component_policy_is_one_shared_rule(component, safe, tmp_path):
     """Store side and record side must agree on what is safe to join."""
-    store = DocStore(base_path="unused")
+    # tmp_path, not a relative name: DocStore creates its base directory, and a
+    # relative one appeared as `unused/` in whatever directory pytest ran from.
+    store = DocStore(base_path=str(tmp_path / "store"))
     assert retirements.is_safe_path_component(component) is safe
     if safe:
         assert store._safe_repo_component(component, "name") == component

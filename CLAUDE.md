@@ -149,9 +149,11 @@ entry that earned no reusable rule got no line.
   proposed a BM25 delta. The profile put 25.6 s of 48.5 s in per-section
   `open`s, so reading each file once took the cost and the delta was SHELVED:
   it can't be exact without storing the uncapped `df` plus a total tie-break,
-  which moves ranking. ⚠ Found and NOT fixed: `df` is capped at 5,000 and on
-  this repo the cut falls inside a 1,848-term tie at count 1, so a full and
-  an incremental build of the same files can differ. (v1.145.0)
+  which moves ranking. `df` is capped at 5,000 and on this repo the cut
+  falls inside a 1,848-term tie at count 1, so a full and an incremental
+  build of the same files could differ. **Settled by @outoftheblue9's #168
+  (`f3f29a6`):** `bm25.cap_df` breaks the tie by term. Measured 2026-10-14,
+  an incremental save's `bm25_stats` now equals a fresh full index. (v1.145.0)
 - ⚠⚠ **A memo of what is on disk is trusted only on (size, `mtime_ns`)**
   (`embeddings/cache.py::_KEY_MEMO`, #140). A size-only check misses a
   same-size rewrite. ⚠ A cache on the long-lived `_content_loader` could
