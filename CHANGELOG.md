@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [1.147.0] - 2026-10-15 - paged TOC tools, explicit heading ids, a superseded-code disclosure
+
 ### Changed - `get_toc`, `get_toc_tree` and `list_docs` are paged, and refuse a megabyte answer (#176)
 
 All three answered with the whole index in one response. Measured on a
@@ -38,6 +40,8 @@ stays comparable with `doc_count`; an unpaged call counts every document, as
 before.
 
 ### Added - `{#custom-id}` on a Markdown heading is now the section's id
+
+Contributed by [@outoftheblue9](https://github.com/outoftheblue9) (#174).
 
 A heading may carry an explicit id, and that id becomes the section's slug:
 
@@ -156,6 +160,8 @@ resolved to, never by the caller's string. The `citation` blocks of
 
 ### Fixed - the indexer and the link checker disagreed about anchors
 
+Contributed by [@outoftheblue9](https://github.com/outoftheblue9) (#174).
+
 `_split_explicit_id` lived in the link checker and was used nowhere else.
 `parser/sections.py` had never heard of it, so the checker reported
 `doc.md#custom-id` as a live target while `get_section` could not resolve it —
@@ -177,6 +183,8 @@ document whose headings already carried a `{#...}` marker gets new primary ids
 on its next reindex; the earlier ids stay as aliases.
 
 ### Added - every tool response says when the server is running superseded code
+
+Contributed by [@outoftheblue9](https://github.com/outoftheblue9) (#175).
 
 New response key `server_build_stale`, returned top-level on every tool response
 when it applies, and in `_meta` where the caller's `meta_fields` keeps it.

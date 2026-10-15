@@ -1,6 +1,6 @@
 # jdocmunch-mcp
 
-**Version:** 1.146.0 |
+**Version:** 1.147.0 |
 **Tests:** `PYTHONPATH=src python -m pytest tests/ -q`
 
 ⚠ **`python -m pytest`, not bare `pytest`**, matching the suite rule in
@@ -9,6 +9,26 @@
 into a different environment, and without `PYTHONPATH` the INSTALLED package
 shadows `src/`. ⚠⚠ **Neither form reproduces CI** — see "reproduce CI" under
 Standing operational notes; this one is the edit loop, not the gate.
+
+## v1.147.0 — #176 paging, #174 heading anchors, #175 stale-server disclosure
+
+#176 (ours, `98e08fe`): `get_toc`, `get_toc_tree` and `list_docs` take
+`limit` / `offset` and always carry `<unit>_total`, `<unit>_truncated` and
+`next_offset`. Over `JDOCMUNCH_RESPONSE_MAX_BYTES` (1 MiB) they REFUSE with
+`suggested_limit`. jjg chose the ceiling on 2026-10-15 knowing it changes a
+1.x default; `=0` restores the old behaviour. @outoftheblue9's #174
+(`fcec6c7`) makes `{#id}` on a Markdown heading the section's slug, and
+#175 (`5dc211e`) adds `server_build_stale` to every response.
+
+⚠⚠ **A cross-document order that Windows sorts by accident is a
+Linux-only failure.** #174's capped candidate list followed `os.walk`
+order, so only the four Ubuntu jobs went red. Sort before you cap; a cap
+over an unsorted list returns a different subset per platform.
+⚠ **Read two values through ONE producer if they are compared.** #175's
+first draft globbed `jdocmunch_mcp-*.dist-info` while `__version__` came
+from `importlib.metadata`, so a leftover dist-info read as drift forever.
+Its `invalidate_caches()` call is defensive and no test pins it.
+⚠ #178 (open): `__version__` itself raises on an undecodable METADATA.
 
 ## v1.146.0 — #168 / #171 from @outoftheblue9, and #172
 
@@ -49,23 +69,7 @@ Don't move it onto `DocStore` or the index. ⚠ #168's sidecar path builds
 through `RowSet.build`, outside the sweep, so a memoized verdict never feeds
 a persisted row. Keep it that way if the two paths are ever merged.
 
-## v1.145.4 — #165 / #166: corpus rules on the two refresh paths
-
-@randyhbh reported both. The watcher's `_corpus_filters` got discovery's
-`local/<name>` handle, so the stored patterns loaded as nothing (#165). The
-PostToolUse hook re-indexed any doc-extension file (#166); `index_file` now
-takes `apply_corpus_rules`, and only the hook passes True.
-
-⚠⚠ **A test that builds its own input skips the producer that broke.** The
-#115 tests handed `_handle_changes` the bare name. Discovery never produces
-it, so they stayed green while the stored-pattern half never ran for a
-real watcher.
-Feed a consumer from its real producer.
-
-⚠ **`index-file <path>` keeps the explicit-path bypass on purpose**, the
-#115 split. A person naming a file gets it; an edit event is not that.
-
-## Lessons from rotated entries (v1.116.0–v1.145.3, lifted 2026-08-29 / 2026-08-30 / 2026-09-17 / 2026-09-19 / 2026-09-21 / 2026-09-24 / 2026-10-06 / 2026-10-12 / 2026-10-14)
+## Lessons from rotated entries (v1.116.0–v1.145.4, lifted 2026-08-29 / 2026-08-30 / 2026-09-17 / 2026-09-19 / 2026-09-21 / 2026-09-24 / 2026-10-06 / 2026-10-12 / 2026-10-14 / 2026-10-15)
 
 ⚠⚠ **These outlived the releases that produced them.** Each line names the
 version whose full narrative now lives in `docs/CLAUDE-history.md`. **Read the
@@ -119,6 +123,10 @@ entry that earned no reusable rule got no line.
 
 **Writing a fix**
 
+- ⚠ **`index-file <path>` keeps the explicit-path bypass of the corpus
+  rules on purpose** (#115's split). A person naming a file gets it; an
+  edit event from the PostToolUse hook is not that, so only the hook
+  passes `apply_corpus_rules=True`. (v1.145.4)
 - ⚠⚠ **Read a combinatorial helper for its cost at n = 16, and then read
   your own replacement the same way.** #163's `path_glob` form made 2**n
   `fnmatch` calls per section; our first regex replacement backtracked
@@ -313,6 +321,11 @@ entry that earned no reusable rule got no line.
 
 **Testing and measurement**
 
+- ⚠⚠ **A test that builds its own input skips the producer that broke.**
+  The #115 tests handed `_handle_changes` a bare index name that discovery
+  never produces, so the watcher's stored corpus patterns loaded as nothing
+  (#165) while the tests stayed green. Feed a consumer from its real
+  producer. (v1.145.4)
 - ⚠ **A generator that concatenates atoms can spell the token it was told
   to leave out.** A "no globstar" fuzz drew `*` then `*/` and made `**/` in
   90 of 4,000 globs. (v1.145.3)
@@ -1029,7 +1042,7 @@ path ([[feedback_fixture_query_corpus_pollution]]).
 ## Release history
 
 ⚠ **This file keeps the THREE newest dated `## vX.Y.Z` sections. Everything
-older is in `docs/CLAUDE-history.md`** — v1.145.3, v1.145.2 and v1.145.1 rotated there 2026-10-14, v1.145.0 on 2026-10-12, v1.144.0 and v1.143.0 on 2026-10-06, v1.142.0 on 2026-09-24, v1.141.0 on 2026-09-21, v1.140.0 and v1.139.1 on 2026-09-19, v1.139.0 and v1.138.0 on 2026-09-17, v1.137.1 on 2026-09-01, v1.137.0 on 2026-08-30,
+older is in `docs/CLAUDE-history.md`** — v1.145.4 rotated there 2026-10-15, v1.145.3, v1.145.2 and v1.145.1 rotated there 2026-10-14, v1.145.0 on 2026-10-12, v1.144.0 and v1.143.0 on 2026-10-06, v1.142.0 on 2026-09-24, v1.141.0 on 2026-09-21, v1.140.0 and v1.139.1 on 2026-09-19, v1.139.0 and v1.138.0 on 2026-09-17, v1.137.1 on 2026-09-01, v1.137.0 on 2026-08-30,
 v1.116.0 through v1.135.0 on 2026-08-29, v1.115.0 and earlier on 2026-07-25. `CHANGELOG.md` covers most of
 them, but 1.67.0-1.92.0 and 1.96.0 exist ONLY in the history file.
 

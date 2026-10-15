@@ -21,6 +21,29 @@ should already be in the brief; if it is not, that is the bug.
 this file.** Those are the only facts in it with a guaranteed expiry date, and
 several entries below carry them. Run the query.
 
+## Rotated 2026-10-15 — v1.145.4
+
+Moved out of `CLAUDE.md` on 2026-10-15 when v1.147.0 became a fourth dated
+section. What it earned was lifted into "Lessons from rotated entries" first:
+feeding a consumer from its real producer, and the `index-file`
+explicit-path bypass.
+
+## v1.145.4 — #165 / #166: corpus rules on the two refresh paths
+
+@randyhbh reported both. The watcher's `_corpus_filters` got discovery's
+`local/<name>` handle, so the stored patterns loaded as nothing (#165). The
+PostToolUse hook re-indexed any doc-extension file (#166); `index_file` now
+takes `apply_corpus_rules`, and only the hook passes True.
+
+⚠⚠ **A test that builds its own input skips the producer that broke.** The
+#115 tests handed `_handle_changes` the bare name. Discovery never produces
+it, so they stayed green while the stored-pattern half never ran for a
+real watcher.
+Feed a consumer from its real producer.
+
+⚠ **`index-file <path>` keeps the explicit-path bypass on purpose**, the
+#115 split. A person naming a file gets it; an edit event is not that.
+
 ## Rotated 2026-10-14 — v1.145.3
 
 Moved out of `CLAUDE.md` on 2026-10-14 when v1.146.0 became a fourth dated
