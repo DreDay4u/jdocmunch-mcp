@@ -21,6 +21,40 @@ should already be in the brief; if it is not, that is the bug.
 this file.** Those are the only facts in it with a guaranteed expiry date, and
 several entries below carry them. Run the query.
 
+## Rotated 2026-10-14 — v1.145.3
+
+Moved out of `CLAUDE.md` on 2026-10-14 when v1.146.0 became a fourth dated
+section. What it earned was lifted into "Lessons from rotated entries" first:
+a combinatorial helper's cost at n = 16, the additive-only `**/` result
+change, the atom-concatenating fuzz, and the jcm `file_pattern` handover.
+
+## v1.145.3 — #163: `**/` in `path_glob` matches zero directories
+
+@vishalhabib99 reported and fixed it: `path_glob` was plain `fnmatch`, so the
+schemas' own example `api/**/*.md` missed `api/auth.md`. The helper is
+`storage/doc_store.py::path_glob_matches`, used at four sites.
+
+⚠⚠ **On 1.x this is an ADDITIVE result change, and the code is built so it
+can only be additive.** The plain `fnmatch` regex is tried first and decides
+alone when it matches. A `**/` glob returns more documents than before, never
+fewer; a test checks it. jjg accepted it by merging #163.
+
+⚠⚠ **Read a combinatorial helper for its cost at n = 16, and then read your
+own replacement the same way.** The PR's form was 2**n `fnmatch` calls per
+section (173 ms for one path at 16 globstars). My first replacement was one
+regex with an optional group per `**/`, and it backtracked WORSE: 2.3 s for 8
+globstars on a 20-deep path. The shipped form walks segment boundaries. Its
+test counts regex calls against the bound. No timing, per jdoc#114.
+
+⚠ **A generator that concatenates atoms can spell the token it was told to
+leave out.** The "no globstar" fuzz drew from atoms without `**/`, and `*`
+followed by `*/` made one in 90 of 4,000 globs. It passed by luck.
+
+⚠ **jcodemunch probably has the same gap, unverified in its tool paths.**
+`fnmatch("src/a.py", "src/**/*.py")` is False by the same mechanism, and
+`file_pattern` there goes through `fnmatch` at several sites. Hand it to that
+repo's own session; this one does not write there.
+
 ## Rotated 2026-10-14 — v1.145.2
 
 Moved out of `CLAUDE.md` on 2026-10-14 when v1.145.5 became a fourth dated

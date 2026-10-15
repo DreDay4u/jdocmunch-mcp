@@ -1,6 +1,6 @@
 # jdocmunch-mcp
 
-**Version:** 1.145.5 |
+**Version:** 1.146.0 |
 **Tests:** `PYTHONPATH=src python -m pytest tests/ -q`
 
 ⚠ **`python -m pytest`, not bare `pytest`**, matching the suite rule in
@@ -9,6 +9,30 @@
 into a different environment, and without `PYTHONPATH` the INSTALLED package
 shadows `src/`. ⚠⚠ **Neither form reproduces CI** — see "reproduce CI" under
 Standing operational notes; this one is the edit loop, not the gate.
+
+## v1.146.0 — #168 / #171 from @outoftheblue9, and #172
+
+#168 (`f3f29a6`) writes Stage-A posting rows to `<name>.postings.jsonl`, so
+a cold search reads them instead of re-tokenizing every section. `bm25.cap_df`
+now breaks the `df` cap's tie by term. On a 14,617-section archive of this
+repo, an incremental save's `bm25_stats` equals a fresh full index's.
+#171 (`be94cf3`) moved the console script to `cli/main.py`. Hooks no longer
+import the MCP SDK, and `cli/_hook_probe.py` answers the Read hint only when
+an index holds the file and is fresh. #172 (`1c91b8e`, ours, found while
+testing #171): `index_file` picked the owning index by ancestor FOLDER NAME,
+so a `--name` index was never found and an ancestor sharing the name
+re-rooted the file there. `_owner_by_source_root` reads the stored root.
+
+⚠⚠ **A test can pin a defect as the contract.** `test_v1_73_0.py` asserted
+that a custom-named index failed without `--name`, which kept #172 green for
+73 minor versions. When a fix turns an old test red, read what that test
+was protecting before you edit it.
+⚠ **`_hook_probe` keeps its own copy of the store-root rule** so the hook
+path imports nothing heavy. A test pins it against `storage/paths.py`. Move
+that rule and the test turns red; keep it that way.
+⚠ **Compute a timebox deadline from the posting time, then check the
+24-hour rule.** The #171 rebase window was first posted 25 hours out and
+was corrected within a minute.
 
 ## v1.145.5 — #169: one path check per document per posting build
 
@@ -41,34 +65,7 @@ Feed a consumer from its real producer.
 ⚠ **`index-file <path>` keeps the explicit-path bypass on purpose**, the
 #115 split. A person naming a file gets it; an edit event is not that.
 
-## v1.145.3 — #163: `**/` in `path_glob` matches zero directories
-
-@vishalhabib99 reported and fixed it: `path_glob` was plain `fnmatch`, so the
-schemas' own example `api/**/*.md` missed `api/auth.md`. The helper is
-`storage/doc_store.py::path_glob_matches`, used at four sites.
-
-⚠⚠ **On 1.x this is an ADDITIVE result change, and the code is built so it
-can only be additive.** The plain `fnmatch` regex is tried first and decides
-alone when it matches. A `**/` glob returns more documents than before, never
-fewer; a test checks it. jjg accepted it by merging #163.
-
-⚠⚠ **Read a combinatorial helper for its cost at n = 16, and then read your
-own replacement the same way.** The PR's form was 2**n `fnmatch` calls per
-section (173 ms for one path at 16 globstars). My first replacement was one
-regex with an optional group per `**/`, and it backtracked WORSE: 2.3 s for 8
-globstars on a 20-deep path. The shipped form walks segment boundaries. Its
-test counts regex calls against the bound. No timing, per jdoc#114.
-
-⚠ **A generator that concatenates atoms can spell the token it was told to
-leave out.** The "no globstar" fuzz drew from atoms without `**/`, and `*`
-followed by `*/` made one in 90 of 4,000 globs. It passed by luck.
-
-⚠ **jcodemunch probably has the same gap, unverified in its tool paths.**
-`fnmatch("src/a.py", "src/**/*.py")` is False by the same mechanism, and
-`file_pattern` there goes through `fnmatch` at several sites. Hand it to that
-repo's own session; this one does not write there.
-
-## Lessons from rotated entries (v1.116.0–v1.145.2, lifted 2026-08-29 / 2026-08-30 / 2026-09-17 / 2026-09-19 / 2026-09-21 / 2026-09-24 / 2026-10-06 / 2026-10-12 / 2026-10-14)
+## Lessons from rotated entries (v1.116.0–v1.145.3, lifted 2026-08-29 / 2026-08-30 / 2026-09-17 / 2026-09-19 / 2026-09-21 / 2026-09-24 / 2026-10-06 / 2026-10-12 / 2026-10-14)
 
 ⚠⚠ **These outlived the releases that produced them.** Each line names the
 version whose full narrative now lives in `docs/CLAUDE-history.md`. **Read the
@@ -122,6 +119,14 @@ entry that earned no reusable rule got no line.
 
 **Writing a fix**
 
+- ⚠⚠ **Read a combinatorial helper for its cost at n = 16, and then read
+  your own replacement the same way.** #163's `path_glob` form made 2**n
+  `fnmatch` calls per section; our first regex replacement backtracked
+  worse (2.3 s at 8 globstars). `path_glob_matches` walks segment
+  boundaries, and its test counts regex calls, not time. A `**/` glob is
+  an ADDITIVE result change on 1.x: plain `fnmatch` decides alone when it
+  matches. ⚠ jcm's `file_pattern` likely has the same gap, unverified;
+  that repo's session owns it. (v1.145.3)
 - ⚠⚠ **The watcher's directory census prunes by ONE rule, "not a directory
   link"** (#154). Discovery also skips dot-directories, SKIP_PATTERNS and
   ignored paths. Pruning more than the census loses updates; jcm's first
@@ -308,6 +313,9 @@ entry that earned no reusable rule got no line.
 
 **Testing and measurement**
 
+- ⚠ **A generator that concatenates atoms can spell the token it was told
+  to leave out.** A "no globstar" fuzz drew `*` then `*/` and made `**/` in
+  90 of 4,000 globs. (v1.145.3)
 - ⚠ **WSL Ubuntu on this box runs Linux tests.** Sync a Linux-side venv
   (`UV_PROJECT_ENVIRONMENT=$HOME/.venvs/<name> uv sync --group dev --python
   3.12`) and set `WATCHFILES_FORCE_POLLING=false`, since watchfiles polls
@@ -1021,7 +1029,7 @@ path ([[feedback_fixture_query_corpus_pollution]]).
 ## Release history
 
 ⚠ **This file keeps the THREE newest dated `## vX.Y.Z` sections. Everything
-older is in `docs/CLAUDE-history.md`** — v1.145.2 and v1.145.1 rotated there 2026-10-14, v1.145.0 on 2026-10-12, v1.144.0 and v1.143.0 on 2026-10-06, v1.142.0 on 2026-09-24, v1.141.0 on 2026-09-21, v1.140.0 and v1.139.1 on 2026-09-19, v1.139.0 and v1.138.0 on 2026-09-17, v1.137.1 on 2026-09-01, v1.137.0 on 2026-08-30,
+older is in `docs/CLAUDE-history.md`** — v1.145.3, v1.145.2 and v1.145.1 rotated there 2026-10-14, v1.145.0 on 2026-10-12, v1.144.0 and v1.143.0 on 2026-10-06, v1.142.0 on 2026-09-24, v1.141.0 on 2026-09-21, v1.140.0 and v1.139.1 on 2026-09-19, v1.139.0 and v1.138.0 on 2026-09-17, v1.137.1 on 2026-09-01, v1.137.0 on 2026-08-30,
 v1.116.0 through v1.135.0 on 2026-08-29, v1.115.0 and earlier on 2026-07-25. `CHANGELOG.md` covers most of
 them, but 1.67.0-1.92.0 and 1.96.0 exist ONLY in the history file.
 

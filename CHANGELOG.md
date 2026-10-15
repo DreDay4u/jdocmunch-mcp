@@ -2,7 +2,11 @@
 
 ## [Unreleased]
 
+## [1.146.0] - 2026-10-14 - posting rows on disk, a lighter Read hook, index-file by stored root
+
 ### Added - the Stage-A posting index is stored on disk instead of rebuilt in every process
+
+Contributed by [@outoftheblue9](https://github.com/outoftheblue9) (#168).
 
 `PostingIndex.build` re-read and re-tokenized every section body on the first
 search of every process, then threw the result away at exit. The save that
@@ -88,6 +92,8 @@ turns the sidecar off. The stored `bm25_stats` block gains
 
 ### Changed - the Read interceptor no longer pays a whole CLI startup to say nothing
 
+Contributed by [@outoftheblue9](https://github.com/outoftheblue9) (#171).
+
 Claude Code fires `jdocmunch-mcp hook-pretooluse` as a fresh process on **every
 `Read`**, and that process does very little: parse a JSON payload, test an
 extension, stat a file, print at most one line. Everything else it cost was
@@ -157,6 +163,8 @@ new branch broke while the branch itself called it on its first line.
 
 ### Changed - the console script and `python -m jdocmunch_mcp` no longer import the MCP SDK
 
+Contributed by [@outoftheblue9](https://github.com/outoftheblue9) (#171).
+
 `pyproject`'s `jdocmunch-mcp` entry point moved from `jdocmunch_mcp.server:main`
 to `jdocmunch_mcp.cli.main:main`. The argparse tree now lives in a module whose
 module-level imports are stdlib only, so `serve` is the one branch that reaches
@@ -185,6 +193,8 @@ anyone piping `jdocmunch-mcp --version`.
 stray top-level import fails the suite.
 
 ### Fixed - the auto-reindex worker was spawned by a name the hook shell cannot resolve
+
+Contributed by [@outoftheblue9](https://github.com/outoftheblue9) (#171).
 
 `run_posttooluse` handed `subprocess.Popen` the bare string `jdocmunch-mcp`.
 That is a PATH lookup, and the PATH a hook inherits is the one thing we already
@@ -232,6 +242,8 @@ or INDEX_VERSION change; no CLI flag added or removed.
 
 ### Fixed - valid JSON that is not a valid payload crashed the hook handlers
 
+Contributed by [@outoftheblue9](https://github.com/outoftheblue9) (#171).
+
 The hint's delivery channel (JSON `hookSpecificOutput.additionalContext` on
 stdout) is not part of this entry: it shipped in 1.140.0 as #129, credited
 there. This entry is the crash alone.
@@ -258,6 +270,8 @@ shape both in process and through a real `python -m jdocmunch_mcp` subprocess,
 so a handler added later is in scope the moment it exists.
 
 ### Added - the hint only fires when it would actually help
+
+Contributed by [@outoftheblue9](https://github.com/outoftheblue9) (#171).
 
 Steering a reader to `search_sections` for a file no index holds sends them
 somewhere that cannot answer; steering them at a STALE index is worse, because
