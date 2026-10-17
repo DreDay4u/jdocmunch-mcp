@@ -2,7 +2,9 @@
 
 ## [Unreleased]
 
-### Changed - a search earns no savings credit, so your savings figures drop
+## [1.148.0] - 2026-10-17 - searches earn no savings credit, a CLI route for huge folders, a FastEmbed repair
+
+### Changed - a search earns no savings credit, so your savings figures drop (#181)
 
 ⚠ **`total_tokens_saved`, `cost_avoided` and this server's share of the
 anonymous community total will grow more slowly from this release.** The drop
@@ -26,7 +28,7 @@ so does `get_session_stats`. The figures were always a model, the bytes of the
 documents an agent would otherwise have read minus the bytes it was served,
 and the 1.x keys can't be renamed to say so.
 
-### Changed - the content mirror resolves its root once per save
+### Changed - the content mirror resolves its root once per save (#182)
 
 `save_index` and `incremental_save` resolved the content root again for every
 document they wrote, and called `mkdir` once per document. The root is now
@@ -35,7 +37,7 @@ document's own path is still resolved, because that resolve is the escape
 check. On a 9,759-file, 271,585-section corpus the path checks fell from 5.4 s
 to 3.5 s of a 67 s full index. The bytes written are unchanged.
 
-### Changed - a slow or capped `index_local` call now names the CLI command
+### Changed - a slow or capped `index_local` call now names the CLI command, and `index-local` takes `--max-files` (#183, #185)
 
 After #180, a full index of 10,000 files (271,585 sections) still took 67 s
 on one Windows machine without embeddings, and sentence-transformers
@@ -55,7 +57,7 @@ changed. `index-local` gains `--max-files N`, the CLI form of the tool's
 this entry points at could not finish the folders it is meant for. The README has a
 new "Very large folders" section, and the tool description points at the CLI.
 
-### Fixed - `semantic_search: true` no longer hides an embedding provider that failed, and `init` repairs a broken FastEmbed model
+### Fixed - `semantic_search: true` no longer hides an embedding provider that failed, and `init` repairs a broken FastEmbed model (#184)
 
 Found while profiling large folders. This machine's FastEmbed model cache lives
 in the temp directory, and something had emptied it. The provider factory
