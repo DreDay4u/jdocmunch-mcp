@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+### Changed - the content mirror resolves its root once per save
+
+`save_index` and `incremental_save` resolved the content root again for every
+document they wrote, and called `mkdir` once per document. The root is now
+resolved once per save and each parent directory is created once. Every
+document's own path is still resolved, because that resolve is the escape
+check. On a 9,759-file, 271,585-section corpus the path checks fell from 5.4 s
+to 3.5 s of a 67 s full index. The bytes written are unchanged.
+
 ## [1.147.1] - 2026-10-16 - a faster folder walk, and a server that starts with a damaged dist-info
 
 ### Fixed - `index_local` no longer stats and resolves files it will never read (#180)
