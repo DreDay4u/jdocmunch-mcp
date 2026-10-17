@@ -264,6 +264,76 @@ def _hub_cache_has_model(base, candidates: list) -> bool:
     return False
 
 
+def _stable_fastembed_cache():
+    """jdocmunch's own FastEmbed model folder, outside the temp directory.
+
+    FastEmbed's default is ``<tempdir>/fastembed_cache``, which OS cleanup can
+    empty. Measured 2026-10-17: a box whose cache had lost ``model.onnx``
+    failed every load and searched lexically. ``JDOCMUNCH_FASTEMBED_CACHE``
+    overrides the folder.
+    """
+    from pathlib import Path
+    env = os.environ.get("JDOCMUNCH_FASTEMBED_CACHE", "").strip()
+    if env:
+        return Path(env).expanduser()
+    return Path.home() / ".cache" / "jdocmunch-mcp" / "fastembed"
+
+
+def _fastembed_root_has_model(root, model: str) -> bool:
+    """Whether ``model`` has files under the FastEmbed cache ``root``.
+
+    Raises OSError on an unreadable root; callers decide which way to fail.
+    """
+    candidates = [model, _canonical_hub_model_id(model)]
+    if not root.exists():
+        return False
+    if _hub_cache_has_model(root, candidates):
+        return True
+    # FastEmbed also stores some models as a flat directory named after
+    # the model rather than in the `models--` layout.
+    for cand in candidates:
+        flat = root / cand.replace("/", "_")
+        if flat.is_dir() and any(flat.iterdir()):
+            return True
+    return False
+
+
+def _fastembed_cache_dir():
+    """The folder the FastEmbed provider loads from, or None for FastEmbed's own.
+
+    ⚠⚠ The stable folder is used only when the model is already there (or
+    ``JDOCMUNCH_FASTEMBED_CACHE`` names it). Pointing every install at it
+    unconditionally would re-download the model for everyone whose temp-dir
+    copy is fine, and a download needs the user's consent (1.143.0). Only
+    ``init --with-embeddings`` puts a model there. ``FASTEMBED_CACHE_PATH``,
+    FastEmbed's own variable, keeps winning.
+    """
+    if os.environ.get("FASTEMBED_CACHE_PATH", "").strip():
+        return None
+    if os.environ.get("JDOCMUNCH_FASTEMBED_CACHE", "").strip():
+        return str(_stable_fastembed_cache())
+    stable = _stable_fastembed_cache()
+    try:
+        if _fastembed_root_has_model(stable, _fastembed_model_name()):
+            return str(stable)
+    except OSError:
+        pass
+    return None
+
+
+def fastembed_model_problem() -> Optional[str]:
+    """Why the FastEmbed model can't load from local files, or None if it can.
+
+    Loads with ``local_files_only=True``, so it never downloads. Used by
+    ``init`` to offer a repair instead of reporting "on" over a broken cache.
+    """
+    try:
+        _FastEmbedProvider(local_files_only=True)
+        return None
+    except Exception as exc:
+        return _describe(exc)
+
+
 def _fastembed_model_is_cached(model: str) -> bool:
     """Whether ``model`` is already downloaded for FastEmbed (jdoc#126).
 
@@ -289,21 +359,14 @@ def _fastembed_model_is_cached(model: str) -> bool:
         return True
     import tempfile
     from pathlib import Path
-    candidates = [model, _canonical_hub_model_id(model)]
+    chosen = _fastembed_cache_dir()
     fe_root = os.environ.get("FASTEMBED_CACHE_PATH", "").strip()
-    root = Path(fe_root) if fe_root else Path(tempfile.gettempdir()) / "fastembed_cache"
+    if chosen:
+        root = Path(chosen)
+    else:
+        root = Path(fe_root) if fe_root else Path(tempfile.gettempdir()) / "fastembed_cache"
     try:
-        if not root.exists():
-            return False
-        if _hub_cache_has_model(root, candidates):
-            return True
-        # FastEmbed also stores some models as a flat directory named after
-        # the model rather than in the `models--` layout.
-        for cand in candidates:
-            flat = root / cand.replace("/", "_")
-            if flat.is_dir() and any(flat.iterdir()):
-                return True
-        return False
+        return _fastembed_root_has_model(root, model)
     except OSError:
         return True
 
@@ -579,11 +642,17 @@ class _FastEmbedProvider:
     DEFAULT_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
     BATCH_SIZE = 64
 
-    def __init__(self):
+    def __init__(self, cache_dir: Optional[str] = None, local_files_only: bool = False):
         from fastembed import TextEmbedding
         model_name = _fastembed_model_name()
         self.model_name = model_name
-        self._model = TextEmbedding(model_name=model_name)
+        kwargs = {}
+        folder = cache_dir if cache_dir is not None else _fastembed_cache_dir()
+        if folder:
+            kwargs["cache_dir"] = folder
+        if local_files_only:
+            kwargs["local_files_only"] = True
+        self._model = TextEmbedding(model_name=model_name, **kwargs)
 
     def embed_texts(self, texts: list, task_type: str = "retrieval_document") -> list:
         # task_type is ignored — MiniLM is symmetric, matching the
@@ -733,6 +802,34 @@ def _reset_provider_cache() -> None:
     _PROVIDER_CACHE.clear()
 
 
+#: Why the active provider produced nothing in this process, or absent.
+#: Keyed by provider signature, so a fix to the env (a new key, a repaired
+#: model cache) is judged on its own attempt. ⚠ Before this, a factory that
+#: raised returned None through a bare ``except``, and `index_local` went on
+#: reporting `semantic_search: true` with zero vectors written: measured on a
+#: box whose FastEmbed model cache in the temp dir had been emptied.
+_PROVIDER_ERRORS: dict = {}
+_ERROR_MAX_CHARS = 300
+
+
+def _describe(exc: BaseException) -> str:
+    text = f"{type(exc).__name__}: {exc}".strip()
+    return text if len(text) <= _ERROR_MAX_CHARS else text[: _ERROR_MAX_CHARS - 3] + "..."
+
+
+def provider_error() -> Optional[str]:
+    """Why the active provider has produced no vectors in this process.
+
+    None when embeddings are off, or when the provider loaded and its last
+    embed pass succeeded. Read by `index_local` to stop `semantic_search: true`
+    standing alone when nothing was embedded.
+    """
+    name = get_provider_name()
+    if not name:
+        return None
+    return _PROVIDER_ERRORS.get(_provider_signature(name))
+
+
 def _get_provider():
     name = get_provider_name()
     if not name:
@@ -775,8 +872,16 @@ def _get_provider():
             return cached
         try:
             instance = factory()
-        except Exception:
+        except Exception as exc:
+            reason = _describe(exc)
+            if _PROVIDER_ERRORS.get(key) != reason:
+                logger.warning(
+                    "Embedding provider %s failed to load (%s); indexing and "
+                    "search continue with lexical BM25 only.", name, reason,
+                )
+            _PROVIDER_ERRORS[key] = reason
             return None
+        _PROVIDER_ERRORS.pop(key, None)
         _PROVIDER_CACHE[key] = instance
         return instance
 
@@ -926,16 +1031,19 @@ def embed_sections(
     embed_failed = False
     if misses:
         texts = [_section_embed_text(s) for s in misses]
+        _sig = _provider_signature(get_provider_name() or "")
         try:
             embeddings = provider.embed_texts(texts, task_type="retrieval_document")
             for sec, emb in zip(misses, embeddings):
                 if emb:
                     sec.embedding = emb
-        except Exception:
+            _PROVIDER_ERRORS.pop(_sig, None)
+        except Exception as exc:
             # Lexical search still works. ⚠⚠ But this pass is now KNOWN to have
             # produced nothing, which the purge below must not read as "the
             # corpus legitimately has no vectors" (jdoc#109).
             embed_failed = True
+            _PROVIDER_ERRORS[_sig] = _describe(exc)
 
     # Persist. jdoc#107: start from what is already on disk unless this pass
     # is authoritative for the whole corpus.

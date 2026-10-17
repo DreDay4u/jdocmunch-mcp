@@ -25,6 +25,47 @@ from typing import Optional
 COVERAGE_WARN_BELOW = 0.5
 
 
+def attach_provider_failure(result: dict, warnings: Optional[list] = None) -> dict:
+    """Say so when `semantic_search` is true but the provider produced nothing.
+
+    `semantic_search` means "a provider is configured", and on 1.x that key
+    keeps its meaning. When the provider failed to load or its last embed pass
+    raised, ``embedding_provider_error`` carries the reason beside it, and a
+    warning says search is lexical. Absent when nothing failed.
+    """
+    if not result.get("semantic_search"):
+        return result
+    try:
+        from ..embeddings.provider import provider_error
+
+        reason = provider_error()
+    except Exception:
+        return result
+    if not reason:
+        return result
+    result["embedding_provider_error"] = reason
+    if warnings is not None:
+        try:
+            from ..embeddings.provider import get_provider_name
+            offline = get_provider_name() == "fastembed"
+        except Exception:
+            offline = False
+        repair = (
+            " To repair a missing or damaged FastEmbed model, run "
+            "`jdocmunch-mcp init --with-embeddings` (it downloads the model "
+            "once, with your consent)."
+            if offline else
+            " The reason above names what failed, such as a missing model "
+            "file or an API error."
+        )
+        warnings.append(
+            "Semantic search is configured but produced no vectors this run "
+            f"({reason}). Search is lexical (BM25) only until the provider "
+            "loads." + repair
+        )
+    return result
+
+
 def attach_embedding_coverage(
     result: dict,
     *,
@@ -39,6 +80,7 @@ def attach_embedding_coverage(
     No-op when the index has no sections or no sidecar exists (a lexical-only
     index must not grow a 0.0 coverage field that reads like a regression).
     """
+    attach_provider_failure(result, warnings)
     if index is None:
         return result
     try:

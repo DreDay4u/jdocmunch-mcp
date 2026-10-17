@@ -251,6 +251,19 @@ a different model with `JDOCMUNCH_FASTEMBED_MODEL` and it keeps its own vectors
 instead, because vectors from two models are not interchangeable
 ([#126](https://github.com/jgravelle/jdocmunch-mcp/issues/126)).
 
+**Where the FastEmbed model lives, and repairing it.** FastEmbed's own default
+folder is `<temp dir>/fastembed_cache`, and OS cleanup can empty it. When the
+model can't load, `index_local` says so in `embedding_provider_error` and a
+warning, and search is word matching until it is fixed. `init` checks the model
+from local files only, without a download. If the model is missing or damaged,
+it offers a repair, and the repair asks for the same consent as the install: a
+yes at the prompt, or `--with-embeddings`. The repair downloads the model
+(87 MB, once) into `~/.cache/jdocmunch-mcp/fastembed`, outside the temp
+directory. The server loads from that folder once the model is there; an
+install whose temp-dir copy works keeps using it and is never re-downloaded.
+`JDOCMUNCH_FASTEMBED_CACHE` names a different folder, and FastEmbed's own
+`FASTEMBED_CACHE_PATH` still takes precedence over both.
+
 **A child process, when local embeddings are in use.** When the
 `sentence-transformers` provider is active, jDocMunch runs the embedding model
 in a **child process** (`python -m jdocmunch_mcp.embeddings.worker`) instead of
