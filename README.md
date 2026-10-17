@@ -153,7 +153,7 @@ jdocmunch-mcp index-local --path /path/to/folder
 The CLI runs the same indexing with no tool timeout. It writes to the same store as the MCP server, so the server uses the index once the command finishes. If you set `DOC_INDEX_PATH` in your client's MCP config, set it in the shell too.
 
 - **Custom names.** If the folder was indexed under a custom name, pass the same `--name`. Without it, the CLI uses the folder name and writes a second index.
-- **The file cap.** A folder is capped at 10,000 files, newest first. The CLI has no flag to raise it. The MCP tool's `max_files` argument does.
+- **The file cap.** A folder is capped at 10,000 files, newest first. Raise it with `--max-files N` (the CLI form of the MCP tool's `max_files`). When a call hits the cap, its warning prints the command with the folder's discovered count.
 - **Narrowing a folder.** Exclude what you don't need with `--extra-ignore-pattern` (repeatable, the CLI form of `extra_ignore_patterns`), or index only listed files with `--paths-from FILE` (the CLI form of `paths`).
 - **Embeddings.** `--no-embeddings` builds a lexical index first. Run the command again later with `--rebuild` to add embeddings.
 
