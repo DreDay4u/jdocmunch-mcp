@@ -2,7 +2,7 @@
 
 ## [Unreleased]
 
-### Fixed - `semantic_search: true` no longer hides an embedding provider that failed
+### Fixed - `semantic_search: true` no longer hides an embedding provider that failed, and `init` repairs a broken FastEmbed model
 
 Found while profiling large folders. This machine's FastEmbed model cache lives
 in the temp directory, and something had emptied it. The provider factory
@@ -19,9 +19,18 @@ warning saying search is lexical. That applies to the full, incremental and
 no-change paths, and to `index_repo` through the shared coverage helper. The
 failure is logged once per distinct reason, and a later success clears it.
 
-Not fixed here: the FastEmbed model still lives in the temp directory, where
-OS cleanup can empty it. Moving it means a fresh download for every FastEmbed
-user, which needs their consent.
+For FastEmbed, the warning names the repair. `init` now checks the model from
+local files only (`local_files_only`, no download) instead of printing
+"Semantic search: on" whenever the package is installed. When the model won't
+load, `init` reports why and offers a repair with the install's consent rule:
+a yes at the prompt or `--with-embeddings`, never `--yes`. The repair, like a
+fresh install, downloads the model (87 MB, once) into
+`~/.cache/jdocmunch-mcp/fastembed`, outside the temp directory
+(`JDOCMUNCH_FASTEMBED_CACHE` overrides it). The server loads from that folder
+only once the model is there, so an install whose temp-dir copy works is never
+re-downloaded. FastEmbed's own `FASTEMBED_CACHE_PATH` still wins. This follows
+the maintainer's ruling of 2026-10-17: report the missing model, repair it on
+request, no silent download.
 
 ## [1.147.1] - 2026-10-16 - a faster folder walk, and a server that starts with a damaged dist-info
 

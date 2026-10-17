@@ -45,11 +45,23 @@ def attach_provider_failure(result: dict, warnings: Optional[list] = None) -> di
         return result
     result["embedding_provider_error"] = reason
     if warnings is not None:
+        try:
+            from ..embeddings.provider import get_provider_name
+            offline = get_provider_name() == "fastembed"
+        except Exception:
+            offline = False
+        repair = (
+            " To repair a missing or damaged FastEmbed model, run "
+            "`jdocmunch-mcp init --with-embeddings` (it downloads the model "
+            "once, with your consent)."
+            if offline else
+            " The reason above names what failed, such as a missing model "
+            "file or an API error."
+        )
         warnings.append(
             "Semantic search is configured but produced no vectors this run "
             f"({reason}). Search is lexical (BM25) only until the provider "
-            "loads. The reason above names what failed, such as a missing "
-            "model file or an API error."
+            "loads." + repair
         )
     return result
 
