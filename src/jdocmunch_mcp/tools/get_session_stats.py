@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Optional
 
 from ..storage.token_tracker import (
+    SAVINGS_BASIS,
     budget_status,
     get_session_response_tokens,
     get_total_saved,
@@ -27,6 +28,7 @@ def get_session_stats(storage_path: Optional[str] = None) -> dict:
     stats = {
         "latency_per_tool": latency_stats(),
         "total_tokens_saved": get_total_saved(storage_path),
+        "savings_basis": SAVINGS_BASIS,
         "session_response_tokens": get_session_response_tokens(),
     }
     budget = budget_status()

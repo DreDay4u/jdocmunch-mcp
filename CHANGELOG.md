@@ -2,6 +2,30 @@
 
 ## [Unreleased]
 
+### Changed - a search earns no savings credit, so your savings figures drop
+
+⚠ **`total_tokens_saved`, `cost_avoided` and this server's share of the
+anonymous community total will grow more slowly from this release.** The drop
+is credit `search_sections` never earned, not anything it stopped doing.
+Totals already recorded are not rewritten.
+
+`search_sections` credited the whole size of every document holding a returned
+section, minus the response. Its answer is a ranked list of section summaries,
+and an agent without this server would not have read every one of those
+documents to get it. When the agent then opened a section, `get_section`
+credited the same document again. Under the maintainer's ruling (2026-10-17,
+the suite-wide rule from jcodemunch-mcp's ledger row L-180), a search now
+reports `tokens_saved: 0` and adds nothing to the running or shared total until
+a measurement supports a number. Opening a section keeps its credit:
+`get_section`, `get_sections`, `get_section_context` and the excerpt tools are
+unchanged. `search_titles`, `lookup_term` and `list_terms` never credited
+anything.
+
+Every response that reports savings now carries `savings_basis: "modeled"`, and
+so does `get_session_stats`. The figures were always a model, the bytes of the
+documents an agent would otherwise have read minus the bytes it was served,
+and the 1.x keys can't be renamed to say so.
+
 ## [1.147.1] - 2026-10-16 - a faster folder walk, and a server that starts with a damaged dist-info
 
 ### Fixed - `index_local` no longer stats and resolves files it will never read (#180)

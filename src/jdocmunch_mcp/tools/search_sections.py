@@ -4,7 +4,7 @@ import time
 from typing import Optional
 
 from ..storage import DocStore
-from ..storage.token_tracker import estimate_savings, record_savings, cost_avoided
+from ..storage.token_tracker import cost_avoided, get_total_saved
 from ..retrieval.projection import attach_snippets, project
 from ..retrieval.verdict import (
     build_verdict,
@@ -373,14 +373,6 @@ def search_sections(
         probe.annotate(sec)
     freshness_summary = probe.summary(results)
 
-    # Calculate token savings: matched docs full bytes vs summary-only response
-    matched_doc_paths = {r.get("doc_path") for r in results}
-    # jdoc#138: from the cached files, not from section ``content``, which
-    # is empty for every byte-addressed section after a reload.
-    raw_bytes = store.raw_doc_bytes(owner, name, matched_doc_paths)
-    # jdoc#101: response_bytes is measured on the SERVED rows, so it is
-    # computed after projection/snippets at the bottom of this function —
-    # not here, where the rows still carry fields the caller may never see.
     latency_ms = int((time.perf_counter() - t0) * 1000)
     meta = {
         "latency_ms": latency_ms,
@@ -598,11 +590,16 @@ def search_sections(
             meta["fields"] = [str(f) for f in fields
                               if isinstance(f, str) and f.strip()]
 
-    response_bytes = sum(len(str(r).encode("utf-8")) for r in results)
-    tokens_saved = estimate_savings(raw_bytes, response_bytes)
-    total = record_savings(tokens_saved, storage_path)
+    # A search earns no savings credit (maintainer's ruling, 2026-10-17, the
+    # suite-wide L-180). It credited the whole size of every document holding
+    # a returned section, which is work a text search would not have done
+    # either, and it counted those documents a second time when the caller
+    # then opened a section. Opening a section keeps its credit. The keys stay
+    # (1.x wire format) and read zero; nothing is added to the running or
+    # shared total.
+    tokens_saved = 0
     meta["tokens_saved"] = tokens_saved
-    meta.update(cost_avoided(tokens_saved, total))
+    meta.update(cost_avoided(tokens_saved, get_total_saved(storage_path)))
 
     payload = {
         "repo": f"{owner}/{name}",

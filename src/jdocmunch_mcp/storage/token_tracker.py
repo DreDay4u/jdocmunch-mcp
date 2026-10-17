@@ -207,9 +207,18 @@ def estimate_savings_text(raw: str, response: str) -> int:
     return max(0, count_tokens(raw or "") - count_tokens(response or ""))
 
 
+#: What every savings figure in a response is (maintainer's ruling,
+#: 2026-10-17, from jcodemunch-mcp's L-180): a MODEL, the bytes of the files an
+#: agent would otherwise have read minus the bytes it was served, not a
+#: measurement of any session. Shipped beside the figures because the 1.x keys
+#: (`tokens_saved`, `cost_avoided`) can't be renamed.
+SAVINGS_BASIS = "modeled"
+
+
 def cost_avoided(tokens_saved: int, total_tokens_saved: int) -> dict:
     """Return cost avoided estimates for this call and the running total."""
     return {
+        "savings_basis": SAVINGS_BASIS,
         "cost_avoided": {
             model: round(tokens_saved * rate, 4)
             for model, rate in PRICING.items()
