@@ -64,13 +64,15 @@ def indexed(tmp_path, monkeypatch):
     return repo, str(storage), store, owner, name, size
 
 
-def test_search_sections_saves_tokens_after_reload(indexed):
+def test_search_sections_earns_no_credit_after_reload(indexed):
+    """Was `> 0` (#138's baseline fix). Since the 2026-10-17 ruling (L-180) a
+    search earns nothing; the outline and TOC tests below still pin #138."""
     from jdocmunch_mcp.tools.search_sections import search_sections
     repo, storage, *_ = indexed
     out = search_sections(repo=repo, query="configure widget timeout",
                           storage_path=storage)
     assert out["results"]
-    assert out["_meta"]["tokens_saved"] > 0
+    assert out["_meta"]["tokens_saved"] == 0
 
 
 def test_get_toc_saves_tokens_after_reload(indexed):

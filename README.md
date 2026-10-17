@@ -136,7 +136,7 @@ Then, inside your agent:
 
 > Using jdocmunch, search the docs for "authentication configuration" and show me that section.
 
-The agent should call `search_sections`, then `get_section` on the top hit — returning one section rather than a file. `_meta.tokens_saved` on the response reports what that cost versus reading the containing document.
+The agent should call `search_sections`, then `get_section` on the top hit — returning one section rather than a file. `_meta.tokens_saved` on the `get_section` response is a modeled saving: the containing document's size minus the section served (`_meta.savings_basis: "modeled"`). `search_sections` itself earns no credit.
 
 **Next step:** `get_toc_tree` for a structural view of the whole corpus, or `index_repo` to index documentation straight from a GitHub repository.
 

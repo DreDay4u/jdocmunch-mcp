@@ -1344,7 +1344,8 @@ def _all_tools() -> list[Tool]:
         Tool(
             name="get_session_stats",
             description=(
-                "Session self-monitor: returns {latency_per_tool, total_tokens_saved}. "
+                "Session self-monitor: returns {latency_per_tool, total_tokens_saved (modeled: "
+                "file bytes avoided minus bytes served; searches earn none)}. "
                 "Lightweight; reads the in-memory latency ring + persistent savings counter. "
                 "For windowed analysis use analyze_perf."
             

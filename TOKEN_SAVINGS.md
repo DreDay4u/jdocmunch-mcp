@@ -104,10 +104,11 @@ On this repository's own documentation at `max_results=10`:
 
 ## Live savings counter
 
-Every retrieval and search response carries real-time accounting in `_meta`:
+Every retrieval response carries modeled accounting in `_meta`:
 
 ```json
 "_meta": {
+  "savings_basis": "modeled",
   "tokens_saved": 1840,
   "total_tokens_saved": 94320,
   "cost_avoided": {
@@ -125,8 +126,15 @@ Every retrieval and search response carries real-time accounting in `_meta`:
 }
 ```
 
-- **`tokens_saved`** — this call: raw doc bytes of matched documents versus the
-  served response bytes, ÷ 4.
+- **`savings_basis`** — always `"modeled"`. Every figure here is a model: the
+  bytes of the documents an agent would otherwise have read, minus the bytes it
+  was served. It isn't a measurement of any session.
+- **`tokens_saved`** — this call: raw doc bytes of the documents opened versus the
+  served response bytes, ÷ 4. **`search_sections` reports 0** (maintainer's
+  ruling, 2026-10-17): it credited every document holding a returned section,
+  work a text search would not have done either, and counted that document a
+  second time when the agent then opened a section. Opening a section
+  (`get_section`, `get_sections`, the excerpt and context tools) keeps its credit.
 - **`total_tokens_saved`** — cumulative, persisted to `~/.doc-index/_savings.json`.
 - **`cost_avoided` / `total_cost_avoided`** — the same token count valued at four
   input rates, per million input tokens:
