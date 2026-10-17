@@ -35,6 +35,24 @@ document's own path is still resolved, because that resolve is the escape
 check. On a 9,759-file, 271,585-section corpus the path checks fell from 5.4 s
 to 3.5 s of a 67 s full index. The bytes written are unchanged.
 
+### Changed - a slow or capped `index_local` call now names the CLI command
+
+After #180, a full index of 10,000 files (271,585 sections) still took 67 s
+on one Windows machine without embeddings, and sentence-transformers
+embeddings added about 3 minutes. No tuning fits that inside an MCP client's
+tool timeout, so a folder of tens of thousands of files belongs on the CLI:
+`jdocmunch-mcp index-local --path <dir>` runs the same indexing with no
+timeout and writes to the store the server reads.
+
+`index_local` now says so at the two points where a caller can act on it.
+When a call takes longer than 30 seconds (`LONG_RUN_HINT_SECONDS`), the
+response's `warnings` carry the exact command for that folder, with `--name`
+when the call named one. When the `max_files` cap is hit, the existing
+warning adds the same command and states that the CLI keeps the 10,000-file
+cap, so the folder still needs `extra_ignore_patterns` or `paths`. Both are
+warning strings only; no response key was added or changed. The README has a
+new "Very large folders" section, and the tool description points at the CLI.
+
 ## [1.147.1] - 2026-10-16 - a faster folder walk, and a server that starts with a damaged dist-info
 
 ### Fixed - `index_local` no longer stats and resolves files it will never read (#180)
