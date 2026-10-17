@@ -733,6 +733,34 @@ def _reset_provider_cache() -> None:
     _PROVIDER_CACHE.clear()
 
 
+#: Why the active provider produced nothing in this process, or absent.
+#: Keyed by provider signature, so a fix to the env (a new key, a repaired
+#: model cache) is judged on its own attempt. ⚠ Before this, a factory that
+#: raised returned None through a bare ``except``, and `index_local` went on
+#: reporting `semantic_search: true` with zero vectors written: measured on a
+#: box whose FastEmbed model cache in the temp dir had been emptied.
+_PROVIDER_ERRORS: dict = {}
+_ERROR_MAX_CHARS = 300
+
+
+def _describe(exc: BaseException) -> str:
+    text = f"{type(exc).__name__}: {exc}".strip()
+    return text if len(text) <= _ERROR_MAX_CHARS else text[: _ERROR_MAX_CHARS - 3] + "..."
+
+
+def provider_error() -> Optional[str]:
+    """Why the active provider has produced no vectors in this process.
+
+    None when embeddings are off, or when the provider loaded and its last
+    embed pass succeeded. Read by `index_local` to stop `semantic_search: true`
+    standing alone when nothing was embedded.
+    """
+    name = get_provider_name()
+    if not name:
+        return None
+    return _PROVIDER_ERRORS.get(_provider_signature(name))
+
+
 def _get_provider():
     name = get_provider_name()
     if not name:
@@ -775,8 +803,16 @@ def _get_provider():
             return cached
         try:
             instance = factory()
-        except Exception:
+        except Exception as exc:
+            reason = _describe(exc)
+            if _PROVIDER_ERRORS.get(key) != reason:
+                logger.warning(
+                    "Embedding provider %s failed to load (%s); indexing and "
+                    "search continue with lexical BM25 only.", name, reason,
+                )
+            _PROVIDER_ERRORS[key] = reason
             return None
+        _PROVIDER_ERRORS.pop(key, None)
         _PROVIDER_CACHE[key] = instance
         return instance
 
@@ -926,16 +962,19 @@ def embed_sections(
     embed_failed = False
     if misses:
         texts = [_section_embed_text(s) for s in misses]
+        _sig = _provider_signature(get_provider_name() or "")
         try:
             embeddings = provider.embed_texts(texts, task_type="retrieval_document")
             for sec, emb in zip(misses, embeddings):
                 if emb:
                     sec.embedding = emb
-        except Exception:
+            _PROVIDER_ERRORS.pop(_sig, None)
+        except Exception as exc:
             # Lexical search still works. ⚠⚠ But this pass is now KNOWN to have
             # produced nothing, which the purge below must not read as "the
             # corpus legitimately has no vectors" (jdoc#109).
             embed_failed = True
+            _PROVIDER_ERRORS[_sig] = _describe(exc)
 
     # Persist. jdoc#107: start from what is already on disk unless this pass
     # is authoritative for the whole corpus.

@@ -33,6 +33,7 @@ from ..storage.doc_store import INDEX_OWNED_SIDECAR_SUFFIXES, normalize_commit_s
 from ..summarizer import summarize_sections
 from ..embeddings import embed_sections, get_provider_name, should_embed
 from ._embedding_coverage import attach_embedding_coverage as _attach_embedding_coverage
+from ._embedding_coverage import attach_provider_failure as _attach_provider_failure
 from ._git import local_git_head, local_git_paths_dirty, local_git_paths_tracked, stable_local_git_state
 from ._constants import SKIP_PATTERNS, is_skipped_dot_dir
 
@@ -2572,6 +2573,7 @@ def index_local(
                 # disclosure — "nothing changed, and your vectors are stale" —
                 # would be the one that omits it.
                 nochange_result.update(embedding_rotation_fields)
+                _attach_provider_failure(nochange_result)
                 _attach_reconciliation_outcome(
                     nochange_result, graduating, reconciliation_disclosure
                 )

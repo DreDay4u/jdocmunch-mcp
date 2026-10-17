@@ -2,6 +2,27 @@
 
 ## [Unreleased]
 
+### Fixed - `semantic_search: true` no longer hides an embedding provider that failed
+
+Found while profiling large folders. This machine's FastEmbed model cache lives
+in the temp directory, and something had emptied it. The provider factory
+raised, a bare `except` turned that into "no provider", every section was
+indexed with BM25 only, and `index_local` still answered
+`"semantic_search": true` with zero vectors written. The #107 coverage
+disclosure stays quiet when there is no embeddings file, so nothing in the
+response contradicted it.
+
+`semantic_search` keeps its 1.x meaning, "a provider is configured". When that
+provider failed to load, or its embed pass raised, the response now also
+carries `embedding_provider_error` (the reason, cut to 300 characters) and a
+warning saying search is lexical. That applies to the full, incremental and
+no-change paths, and to `index_repo` through the shared coverage helper. The
+failure is logged once per distinct reason, and a later success clears it.
+
+Not fixed here: the FastEmbed model still lives in the temp directory, where
+OS cleanup can empty it. Moving it means a fresh download for every FastEmbed
+user, which needs their consent.
+
 ## [1.147.1] - 2026-10-16 - a faster folder walk, and a server that starts with a damaged dist-info
 
 ### Fixed - `index_local` no longer stats and resolves files it will never read (#180)
