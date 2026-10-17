@@ -37,6 +37,43 @@ from ._git import local_git_head, local_git_paths_dirty, local_git_paths_tracked
 from ._constants import SKIP_PATTERNS, is_skipped_dot_dir
 
 
+# A call that runs longer than this gets a warning naming the CLI command.
+# MCP clients time a tool call out, and a folder of tens of thousands of files
+# can take minutes to index. The CLI runs the same code with no such limit and
+# writes to the same store root, so the MCP server reads its index afterwards.
+LONG_RUN_HINT_SECONDS = 30
+
+
+def _cli_command(folder_path: Path, name: Optional[str]) -> str:
+    """The shell command that indexes ``folder_path`` with no MCP timeout."""
+    cmd = f'jdocmunch-mcp index-local --path "{folder_path}"'
+    if name:
+        cmd += f' --name "{name}"'
+    return cmd
+
+
+def _cap_hit_cli_hint(folder_path: Path, name: Optional[str]) -> str:
+    return (
+        " If a larger max_files makes this call time out, run "
+        f"`{_cli_command(folder_path, name)}` from a shell instead. The CLI "
+        "has no MCP timeout but keeps the 10,000-file cap, so narrow the "
+        "folder with extra_ignore_patterns or paths."
+    )
+
+
+def _append_long_run_hint(
+    warnings: list, latency_ms: int, folder_path: Path, name: Optional[str]
+) -> None:
+    """Point a slow call at the CLI before the next one times out."""
+    if latency_ms / 1000 > LONG_RUN_HINT_SECONDS:
+        warnings.append(
+            f"This call took {latency_ms / 1000:.0f} s. An MCP client may time "
+            "out on a larger folder. For very large folders, run "
+            f"`{_cli_command(folder_path, name)}` from a shell; the MCP server "
+            "uses the index it writes."
+        )
+
+
 def _default_local_name(folder_name: str, folder_path: Optional[str] = None) -> str:
     """Derive a storage-safe local index name from a folder basename (jdoc#72).
 
@@ -2761,9 +2798,11 @@ def index_local(
                     f"max_files cap hit: indexed {len(doc_files)} of "
                     f"{discovered_count} discovered files. Raise max_files "
                     f"to capture the rest."
+                    + _cap_hit_cli_hint(folder_path, name)
                 )
             else:
                 result["truncated"] = False
+            _append_long_run_hint(warnings, latency_ms, folder_path, name)
             if warnings:
                 result["warnings"] = warnings
             return _finish_legacy_reconcile(result, legacy_ctx)
@@ -2991,6 +3030,7 @@ def index_local(
                 f"max_files cap hit: indexed {len(doc_files)} of "
                 f"{discovered_count} discovered files. Raise max_files to "
                 f"capture the rest."
+                + _cap_hit_cli_hint(folder_path, name)
             )
             result["note"] = (
                 f"Folder has many files; indexed first {max_files} of "
@@ -2999,6 +3039,7 @@ def index_local(
         else:
             result["truncated"] = False
 
+        _append_long_run_hint(warnings, latency_ms, folder_path, name)
         if warnings:
             result["warnings"] = warnings
 
