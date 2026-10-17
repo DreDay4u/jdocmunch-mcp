@@ -15,9 +15,11 @@ timeout and writes to the store the server reads.
 When a call takes longer than 30 seconds (`LONG_RUN_HINT_SECONDS`), the
 response's `warnings` carry the exact command for that folder, with `--name`
 when the call named one. When the `max_files` cap is hit, the existing
-warning adds the same command and states that the CLI keeps the 10,000-file
-cap, so the folder still needs `extra_ignore_patterns` or `paths`. Both are
-warning strings only; no response key was added or changed. The README has a
+warning adds the same command with `--max-files` set to the number of files
+discovered. Both are warning strings only; no response key was added or
+changed. `index-local` gains `--max-files N`, the CLI form of the tool's
+`max_files`: before it, the CLI always stopped at 10,000 files, so the route
+this entry points at could not finish the folders it is meant for. The README has a
 new "Very large folders" section, and the tool description points at the CLI.
 
 ## [1.147.1] - 2026-10-16 - a faster folder walk, and a server that starts with a damaged dist-info

@@ -52,12 +52,11 @@ def _cli_command(folder_path: Path, name: Optional[str]) -> str:
     return cmd
 
 
-def _cap_hit_cli_hint(folder_path: Path, name: Optional[str]) -> str:
+def _cap_hit_cli_hint(folder_path: Path, name: Optional[str], discovered: int) -> str:
     return (
         " If a larger max_files makes this call time out, run "
-        f"`{_cli_command(folder_path, name)}` from a shell instead. The CLI "
-        "has no MCP timeout but keeps the 10,000-file cap, so narrow the "
-        "folder with extra_ignore_patterns or paths."
+        f"`{_cli_command(folder_path, name)} --max-files {discovered}` from a "
+        "shell instead; the CLI has no MCP timeout."
     )
 
 
@@ -2798,7 +2797,7 @@ def index_local(
                     f"max_files cap hit: indexed {len(doc_files)} of "
                     f"{discovered_count} discovered files. Raise max_files "
                     f"to capture the rest."
-                    + _cap_hit_cli_hint(folder_path, name)
+                    + _cap_hit_cli_hint(folder_path, name, discovered_count)
                 )
             else:
                 result["truncated"] = False
@@ -3030,7 +3029,7 @@ def index_local(
                 f"max_files cap hit: indexed {len(doc_files)} of "
                 f"{discovered_count} discovered files. Raise max_files to "
                 f"capture the rest."
-                + _cap_hit_cli_hint(folder_path, name)
+                + _cap_hit_cli_hint(folder_path, name, discovered_count)
             )
             result["note"] = (
                 f"Folder has many files; indexed first {max_files} of "

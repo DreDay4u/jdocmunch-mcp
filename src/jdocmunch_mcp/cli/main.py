@@ -84,6 +84,17 @@ def _load_paths_from_arg(paths_from: str) -> tuple[Optional[list], Optional[str]
     return paths_arg, None
 
 
+def _positive_int(text: str) -> int:
+    """argparse type for a count that must be at least 1."""
+    try:
+        value = int(text)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"{text!r} is not a whole number")
+    if value < 1:
+        raise argparse.ArgumentTypeError("must be at least 1")
+    return value
+
+
 def _force_utf8_stdio() -> None:
     """Make CLI output UTF-8 regardless of the platform locale.
 
@@ -279,6 +290,14 @@ def main(argv: Optional[list] = None):
             "stdin. When set, the directory walk is skipped — only the listed "
             "paths are indexed. Entries may be absolute or relative to --path. "
             "Pipe-friendly with find / fd / fzf / rg."
+        ),
+    )
+    il_parser.add_argument(
+        "--max-files", type=_positive_int, default=10_000, metavar="N",
+        help=(
+            "Index at most N files, newest first (default 10000; the MCP "
+            "tool's max_files). Raise it for a folder past the default, where "
+            "an MCP call would time out."
         ),
     )
     il_parser.add_argument(
@@ -501,6 +520,7 @@ def main(argv: Optional[list] = None):
                     [] if getattr(args, "no_extra_ignore_patterns", False)
                     else getattr(args, "extra_ignore_pattern", None)
                 ),
+                max_files=getattr(args, "max_files", 10_000),
             )
         print(json.dumps(result, indent=2))
         return

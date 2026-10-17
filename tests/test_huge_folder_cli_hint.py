@@ -47,7 +47,7 @@ def test_full_path_cap_warning_names_the_cli(tmp_path):
     cap = [w for w in result["warnings"] if w.startswith("max_files cap hit")]
     assert len(cap) == 1
     assert f'jdocmunch-mcp index-local --path "{folder.resolve()}"' in cap[0]
-    assert "keeps the 10,000-file cap" in cap[0]
+    assert f'--path "{folder.resolve()}" --max-files 3' in cap[0]
     # Existing keys keep their meaning.
     assert result["discovered"] == 3
     assert result["indexed"] == 2
@@ -112,3 +112,34 @@ def test_no_hint_under_the_threshold(tmp_path):
 
 def test_threshold_default_is_thirty_seconds():
     assert il_mod.LONG_RUN_HINT_SECONDS == 30
+
+
+# --- the CLI's --max-files (completes the CLI route above) ------------------
+
+def _cli_kwargs(monkeypatch, argv):
+    import jdocmunch_mcp.tools.index_local as il
+    from jdocmunch_mcp.cli import main as cli_main
+    seen = {}
+
+    def fake_index_local(**kw):
+        seen.update(kw)
+        return {"success": True}
+
+    monkeypatch.setattr(il, "index_local", fake_index_local)
+    cli_main.main(["index-local", "--path", "."] + argv)
+    return seen
+
+
+def test_cli_max_files_reaches_index_local(monkeypatch, capsys):
+    assert _cli_kwargs(monkeypatch, ["--max-files", "50000"])["max_files"] == 50000
+
+
+def test_cli_max_files_defaults_to_the_tools_default(monkeypatch, capsys):
+    assert _cli_kwargs(monkeypatch, [])["max_files"] == 10_000
+
+
+@pytest.mark.parametrize("bad", ["0", "-5", "lots"])
+def test_cli_max_files_refuses_a_bad_count(monkeypatch, capsys, bad):
+    with pytest.raises(SystemExit) as exc:
+        _cli_kwargs(monkeypatch, ["--max-files", bad])
+    assert exc.value.code == 2
