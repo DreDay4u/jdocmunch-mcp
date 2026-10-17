@@ -21,6 +21,37 @@ should already be in the brief; if it is not, that is the bug.
 this file.** Those are the only facts in it with a guaranteed expiry date, and
 several entries below carry them. Run the query.
 
+## Rotated 2026-10-17 — v1.146.0
+
+Moved out of `CLAUDE.md` on 2026-10-17 when v1.148.0 became a fourth dated
+section. What it earned was lifted into "Lessons from rotated entries"
+first: a test pinning a defect as the contract, and `_hook_probe`'s copy of
+the store-root rule.
+
+## v1.146.0 — #168 / #171 from @outoftheblue9, and #172
+
+#168 (`f3f29a6`) writes Stage-A posting rows to `<name>.postings.jsonl`, so
+a cold search reads them instead of re-tokenizing every section. `bm25.cap_df`
+now breaks the `df` cap's tie by term. On a 14,617-section archive of this
+repo, an incremental save's `bm25_stats` equals a fresh full index's.
+#171 (`be94cf3`) moved the console script to `cli/main.py`. Hooks no longer
+import the MCP SDK, and `cli/_hook_probe.py` answers the Read hint only when
+an index holds the file and is fresh. #172 (`1c91b8e`, ours, found while
+testing #171): `index_file` picked the owning index by ancestor FOLDER NAME,
+so a `--name` index was never found and an ancestor sharing the name
+re-rooted the file there. `_owner_by_source_root` reads the stored root.
+
+⚠⚠ **A test can pin a defect as the contract.** `test_v1_73_0.py` asserted
+that a custom-named index failed without `--name`, which kept #172 green for
+73 minor versions. When a fix turns an old test red, read what that test
+was protecting before you edit it.
+⚠ **`_hook_probe` keeps its own copy of the store-root rule** so the hook
+path imports nothing heavy. A test pins it against `storage/paths.py`. Move
+that rule and the test turns red; keep it that way.
+⚠ **Compute a timebox deadline from the posting time, then check the
+24-hour rule.** The #171 rebase window was first posted 25 hours out and
+was corrected within a minute.
+
 ## Rotated 2026-10-16 — v1.145.5
 
 Moved out of `CLAUDE.md` on 2026-10-16 when v1.147.1 became a fourth dated

@@ -1,6 +1,6 @@
 # jdocmunch-mcp
 
-**Version:** 1.147.1 |
+**Version:** 1.148.0 |
 **Tests:** `PYTHONPATH=src python -m pytest tests/ -q`
 
 ⚠ **`python -m pytest`, not bare `pytest`**, matching the suite rule in
@@ -9,6 +9,32 @@
 into a different environment, and without `PYTHONPATH` the INSTALLED package
 shadows `src/`. ⚠⚠ **Neither form reproduces CI** — see "reproduce CI" under
 Standing operational notes; this one is the edit loop, not the gate.
+
+## v1.148.0 — L-180 savings, huge folders, FastEmbed repair (#181-#185)
+
+Five PRs in one release, merged through `release/1.148.0` with merge
+commits so J clicked once. #181 (J's ruling, the suite-wide L-180):
+`search_sections` reports `tokens_saved: 0` and adds nothing to the running
+or shared total; every savings figure carries `savings_basis: "modeled"`.
+#182: the content mirror resolves its root once per save. #183 / #185
+(ruling A): slow or capped `index_local` calls name the CLI, and
+`index-local --max-files N` exists. #184 (ruling B): `index_local` adds
+`embedding_provider_error` when `semantic_search` is true but nothing was
+embedded, and `init` repairs a broken FastEmbed model only on consent, into
+`~/.cache/jdocmunch-mcp/fastembed`.
+
+⚠⚠ **Profile the hot path WITHOUT cProfile before choosing a fix.** It
+inflated pure-Python code about 7x: `json.dump` read as 23 s and measured
+3.5 s; the posting build read as 27 s and measured 12.7 s. Wall-clock
+wrappers around each phase gave the real split.
+⚠⚠ **`semantic_search` means "a provider is configured", not "vectors
+exist".** A bare `except` in `_get_provider` hid a missing `model.onnx`
+for as long as the temp dir stayed empty. `embedding_provider_error` is the
+new key; never change the old one's meaning on 1.x.
+⚠ The release script (`release_jdoc.py`, in the Chief of Staff's notes
+folder) stops unless the PR reads CLEAN. On 2026-10-17 cla-assistant's
+webhook returned 503 for hours while its homepage returned 200, so judge
+recovery by a redelivery's `status_code`, never the homepage.
 
 ## v1.147.1 — discovery skips non-doc files first, and #178
 
@@ -48,31 +74,7 @@ from `importlib.metadata`, so a leftover dist-info read as drift forever.
 Its `invalidate_caches()` call is defensive and no test pins it.
 ⚠ #178 (open): `__version__` itself raises on an undecodable METADATA.
 
-## v1.146.0 — #168 / #171 from @outoftheblue9, and #172
-
-#168 (`f3f29a6`) writes Stage-A posting rows to `<name>.postings.jsonl`, so
-a cold search reads them instead of re-tokenizing every section. `bm25.cap_df`
-now breaks the `df` cap's tie by term. On a 14,617-section archive of this
-repo, an incremental save's `bm25_stats` equals a fresh full index's.
-#171 (`be94cf3`) moved the console script to `cli/main.py`. Hooks no longer
-import the MCP SDK, and `cli/_hook_probe.py` answers the Read hint only when
-an index holds the file and is fresh. #172 (`1c91b8e`, ours, found while
-testing #171): `index_file` picked the owning index by ancestor FOLDER NAME,
-so a `--name` index was never found and an ancestor sharing the name
-re-rooted the file there. `_owner_by_source_root` reads the stored root.
-
-⚠⚠ **A test can pin a defect as the contract.** `test_v1_73_0.py` asserted
-that a custom-named index failed without `--name`, which kept #172 green for
-73 minor versions. When a fix turns an old test red, read what that test
-was protecting before you edit it.
-⚠ **`_hook_probe` keeps its own copy of the store-root rule** so the hook
-path imports nothing heavy. A test pins it against `storage/paths.py`. Move
-that rule and the test turns red; keep it that way.
-⚠ **Compute a timebox deadline from the posting time, then check the
-24-hour rule.** The #171 rebase window was first posted 25 hours out and
-was corrected within a minute.
-
-## Lessons from rotated entries (v1.116.0–v1.145.5, lifted 2026-08-29 / 2026-08-30 / 2026-09-17 / 2026-09-19 / 2026-09-21 / 2026-09-24 / 2026-10-06 / 2026-10-12 / 2026-10-14 / 2026-10-15 / 2026-10-16)
+## Lessons from rotated entries (v1.116.0–v1.146.0, lifted 2026-08-29 / 2026-08-30 / 2026-09-17 / 2026-09-19 / 2026-09-21 / 2026-09-24 / 2026-10-06 / 2026-10-12 / 2026-10-14 / 2026-10-15 / 2026-10-16 / 2026-10-17)
 
 ⚠⚠ **These outlived the releases that produced them.** Each line names the
 version whose full narrative now lives in `docs/CLAUDE-history.md`. **Read the
@@ -126,6 +128,12 @@ entry that earned no reusable rule got no line.
 
 **Writing a fix**
 
+- ⚠⚠ **A test can pin a defect as the contract** (#172). `test_v1_73_0.py`
+  asserted a custom-named index failed without `--name`, which kept the bug
+  green for 73 minor versions. When a fix turns an old test red, read what
+  it was protecting before you edit it. ⚠ `_hook_probe` keeps its own copy of
+  the store-root rule so hooks import nothing heavy; a test pins it against
+  `storage/paths.py`. (v1.146.0)
 - ⚠⚠ **A path-check memo's LIFETIME is its security argument** (#169).
   The posting build's per-document verdict is per `load_index` call,
   thread-local and cleared in `finally`. Kept on `DocStore` or the cached
@@ -1051,7 +1059,7 @@ path ([[feedback_fixture_query_corpus_pollution]]).
 ## Release history
 
 ⚠ **This file keeps the THREE newest dated `## vX.Y.Z` sections. Everything
-older is in `docs/CLAUDE-history.md`** — v1.145.5 rotated there 2026-10-16, v1.145.4 on 2026-10-15, v1.145.3, v1.145.2 and v1.145.1 rotated there 2026-10-14, v1.145.0 on 2026-10-12, v1.144.0 and v1.143.0 on 2026-10-06, v1.142.0 on 2026-09-24, v1.141.0 on 2026-09-21, v1.140.0 and v1.139.1 on 2026-09-19, v1.139.0 and v1.138.0 on 2026-09-17, v1.137.1 on 2026-09-01, v1.137.0 on 2026-08-30,
+older is in `docs/CLAUDE-history.md`** — v1.146.0 rotated there 2026-10-17, v1.145.5 on 2026-10-16, v1.145.4 on 2026-10-15, v1.145.3, v1.145.2 and v1.145.1 rotated there 2026-10-14, v1.145.0 on 2026-10-12, v1.144.0 and v1.143.0 on 2026-10-06, v1.142.0 on 2026-09-24, v1.141.0 on 2026-09-21, v1.140.0 and v1.139.1 on 2026-09-19, v1.139.0 and v1.138.0 on 2026-09-17, v1.137.1 on 2026-09-01, v1.137.0 on 2026-08-30,
 v1.116.0 through v1.135.0 on 2026-08-29, v1.115.0 and earlier on 2026-07-25. `CHANGELOG.md` covers most of
 them, but 1.67.0-1.92.0 and 1.96.0 exist ONLY in the history file.
 

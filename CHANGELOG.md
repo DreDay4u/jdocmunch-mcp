@@ -2,6 +2,91 @@
 
 ## [Unreleased]
 
+## [1.148.0] - 2026-10-17 - searches earn no savings credit, a CLI route for huge folders, a FastEmbed repair
+
+### Changed - a search earns no savings credit, so your savings figures drop (#181)
+
+⚠ **`total_tokens_saved`, `cost_avoided` and this server's share of the
+anonymous community total will grow more slowly from this release.** The drop
+is credit `search_sections` never earned, not anything it stopped doing.
+Totals already recorded are not rewritten.
+
+`search_sections` credited the whole size of every document holding a returned
+section, minus the response. Its answer is a ranked list of section summaries,
+and an agent without this server would not have read every one of those
+documents to get it. When the agent then opened a section, `get_section`
+credited the same document again. Under the maintainer's ruling (2026-10-17,
+the suite-wide rule from jcodemunch-mcp's ledger row L-180), a search now
+reports `tokens_saved: 0` and adds nothing to the running or shared total until
+a measurement supports a number. Opening a section keeps its credit:
+`get_section`, `get_sections`, `get_section_context` and the excerpt tools are
+unchanged. `search_titles`, `lookup_term` and `list_terms` never credited
+anything.
+
+Every response that reports savings now carries `savings_basis: "modeled"`, and
+so does `get_session_stats`. The figures were always a model, the bytes of the
+documents an agent would otherwise have read minus the bytes it was served,
+and the 1.x keys can't be renamed to say so.
+
+### Changed - the content mirror resolves its root once per save (#182)
+
+`save_index` and `incremental_save` resolved the content root again for every
+document they wrote, and called `mkdir` once per document. The root is now
+resolved once per save and each parent directory is created once. Every
+document's own path is still resolved, because that resolve is the escape
+check. On a 9,759-file, 271,585-section corpus the path checks fell from 5.4 s
+to 3.5 s of a 67 s full index. The bytes written are unchanged.
+
+### Changed - a slow or capped `index_local` call now names the CLI command, and `index-local` takes `--max-files` (#183, #185)
+
+After #180, a full index of 10,000 files (271,585 sections) still took 67 s
+on one Windows machine without embeddings, and sentence-transformers
+embeddings added about 3 minutes. No tuning fits that inside an MCP client's
+tool timeout, so a folder of tens of thousands of files belongs on the CLI:
+`jdocmunch-mcp index-local --path <dir>` runs the same indexing with no
+timeout and writes to the store the server reads.
+
+`index_local` now says so at the two points where a caller can act on it.
+When a call takes longer than 30 seconds (`LONG_RUN_HINT_SECONDS`), the
+response's `warnings` carry the exact command for that folder, with `--name`
+when the call named one. When the `max_files` cap is hit, the existing
+warning adds the same command with `--max-files` set to the number of files
+discovered. Both are warning strings only; no response key was added or
+changed. `index-local` gains `--max-files N`, the CLI form of the tool's
+`max_files`: before it, the CLI always stopped at 10,000 files, so the route
+this entry points at could not finish the folders it is meant for. The README has a
+new "Very large folders" section, and the tool description points at the CLI.
+
+### Fixed - `semantic_search: true` no longer hides an embedding provider that failed, and `init` repairs a broken FastEmbed model (#184)
+
+Found while profiling large folders. This machine's FastEmbed model cache lives
+in the temp directory, and something had emptied it. The provider factory
+raised, a bare `except` turned that into "no provider", every section was
+indexed with BM25 only, and `index_local` still answered
+`"semantic_search": true` with zero vectors written. The #107 coverage
+disclosure stays quiet when there is no embeddings file, so nothing in the
+response contradicted it.
+
+`semantic_search` keeps its 1.x meaning, "a provider is configured". When that
+provider failed to load, or its embed pass raised, the response now also
+carries `embedding_provider_error` (the reason, cut to 300 characters) and a
+warning saying search is lexical. That applies to the full, incremental and
+no-change paths, and to `index_repo` through the shared coverage helper. The
+failure is logged once per distinct reason, and a later success clears it.
+
+For FastEmbed, the warning names the repair. `init` now checks the model from
+local files only (`local_files_only`, no download) instead of printing
+"Semantic search: on" whenever the package is installed. When the model won't
+load, `init` reports why and offers a repair with the install's consent rule:
+a yes at the prompt or `--with-embeddings`, never `--yes`. The repair, like a
+fresh install, downloads the model (87 MB, once) into
+`~/.cache/jdocmunch-mcp/fastembed`, outside the temp directory
+(`JDOCMUNCH_FASTEMBED_CACHE` overrides it). The server loads from that folder
+only once the model is there, so an install whose temp-dir copy works is never
+re-downloaded. FastEmbed's own `FASTEMBED_CACHE_PATH` still wins. This follows
+the maintainer's ruling of 2026-10-17: report the missing model, repair it on
+request, no silent download.
+
 ## [1.147.1] - 2026-10-16 - a faster folder walk, and a server that starts with a damaged dist-info
 
 ### Fixed - `index_local` no longer stats and resolves files it will never read (#180)

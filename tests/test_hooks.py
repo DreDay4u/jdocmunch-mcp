@@ -409,6 +409,8 @@ class TestCLIDispatch:
                 # `index-local` must never clear an operator's exclusions, and
                 # this assertion is what pins the difference at the CLI seam.
                 extra_ignore_patterns=None,
+                # The tool's own default; --max-files raises it.
+                max_files=10_000,
             )
 
     def test_index_local_rebuild_flag_forces_a_full_pass(self, tmp_path):

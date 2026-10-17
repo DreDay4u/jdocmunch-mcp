@@ -1285,6 +1285,32 @@ class DocStore:
         except (OSError, ValueError, TypeError):
             pass
 
+    def _write_content_mirror(
+        self, content_dir: Path, raw_files: dict, resolved_root: Optional[Path] = None,
+    ) -> None:
+        """Write each document's indexed text under ``content_dir``.
+
+        Both save paths used to resolve ``content_dir`` again for every
+        document and call ``mkdir`` once per document. On a 9,759-file corpus
+        the two cost about 7 s of a 31 s ``save_index``. The root is now resolved
+        once and each parent directory is created once per call.
+        ⚠ Each CANDIDATE is still resolved: that is the escape guard
+        (``_safe_content_path``), and a memo of it would outlive the check.
+        """
+        if resolved_root is None:
+            resolved_root = content_dir.resolve()
+        made: set = set()
+        for doc_path, content in raw_files.items():
+            dest = self._safe_content_path(content_dir, doc_path, resolved_root)
+            if not dest:
+                raise ValueError(f"Unsafe doc path in raw_files: {doc_path}")
+            parent = dest.parent
+            if parent not in made:
+                parent.mkdir(parents=True, exist_ok=True)
+                made.add(parent)
+            with open(dest, "wb") as f:
+                f.write(content.encode("utf-8"))
+
     def _safe_content_path(
         self, content_dir: Path, relative_path: str, resolved_root: Optional[Path] = None,
     ) -> Optional[Path]:
@@ -1649,14 +1675,7 @@ class DocStore:
         # (jdoc#74).
         content_dir = self._content_dir(owner, name)
         content_dir.mkdir(parents=True, exist_ok=True)
-
-        for doc_path, content in raw_files.items():
-            dest = self._safe_content_path(content_dir, doc_path)
-            if not dest:
-                raise ValueError(f"Unsafe doc path in raw_files: {doc_path}")
-            dest.parent.mkdir(parents=True, exist_ok=True)
-            with open(dest, "wb") as f:
-                f.write(content.encode("utf-8"))
+        self._write_content_mirror(content_dir, raw_files)
 
         return index
 
@@ -2110,19 +2129,14 @@ class DocStore:
         # Update cached raw files
         content_dir = self._content_dir(owner, name)
         content_dir.mkdir(parents=True, exist_ok=True)
+        resolved_root = content_dir.resolve()
 
         for fp in deleted_files:
-            dead = self._safe_content_path(content_dir, fp)
+            dead = self._safe_content_path(content_dir, fp, resolved_root)
             if dead and dead.exists():
                 dead.unlink()
 
-        for fp, content in raw_files.items():
-            dest = self._safe_content_path(content_dir, fp)
-            if not dest:
-                raise ValueError(f"Unsafe doc path in raw_files: {fp}")
-            dest.parent.mkdir(parents=True, exist_ok=True)
-            with open(dest, "wb") as f:
-                f.write(content.encode("utf-8"))
+        self._write_content_mirror(content_dir, raw_files, resolved_root)
 
         return updated
 

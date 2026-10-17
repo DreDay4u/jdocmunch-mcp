@@ -95,14 +95,41 @@ def _install_fastembed(run: Callable = subprocess.run) -> tuple[bool, str]:
 
 
 def _download_model() -> tuple[bool, str]:
-    """Fetch the model through the provider's own constructor, so the file lands
-    exactly where the server will look for it. Never raises."""
+    """Fetch the model into jdocmunch's stable model folder, through the
+    provider's own constructor. The server loads from that folder once the
+    model is there, so the file lands where it will look. Never raises.
+
+    ⚠ The stable folder, not FastEmbed's ``<tempdir>/fastembed_cache``: OS
+    cleanup can empty the temp dir, and that is the damage a repair fixes.
+    """
     try:
-        from ..embeddings.provider import _FastEmbedProvider
-        _FastEmbedProvider()
+        from ..embeddings import provider as _p
+        _p._FastEmbedProvider(cache_dir=str(_p._stable_fastembed_cache()))
+        # A load that failed earlier in this process must not stand.
+        _p._PROVIDER_ERRORS.clear()
         return True, ""
     except Exception as exc:
         return False, str(exc)[:200]
+
+
+def _model_problem() -> Optional[str]:
+    try:
+        from ..embeddings.provider import fastembed_model_problem
+        return fastembed_model_problem()
+    except Exception as exc:
+        return str(exc)[:200]
+
+
+def repair_text(problem: str) -> str:
+    """The prompt shown when FastEmbed is installed but its model won't load."""
+    return (
+        "Semantic search is configured (fastembed), but its model is missing or damaged:\n"
+        f"  {problem}\n"
+        "Until it is repaired, searches match words only.\n"
+        f"Repairing downloads one model file ({MODEL_DOWNLOAD_MB} MB, once, from huggingface.co)\n"
+        "into jdocmunch's own model folder, outside the temp directory.\n"
+        "Repair it now?"
+    )
 
 
 def offer_embeddings(
@@ -120,6 +147,13 @@ def offer_embeddings(
     lexical and says how to change that. Nothing here raises.
     """
     provider = _resolved_provider()
+    if provider == "fastembed":
+        problem = _model_problem()
+        if problem:
+            return _offer_repair(
+                problem, interactive=interactive, with_embeddings=with_embeddings,
+                dry_run=dry_run, prompt_yn=prompt_yn, out=out,
+            )
     if provider:
         out(f"  Semantic search: on ({provider})")
         return True
@@ -156,4 +190,44 @@ def offer_embeddings(
 
     out("  Semantic search: on (fastembed). Runs on this machine.")
     out(f"  Indexing with embeddings takes about {SECONDS_PER_1000_SECTIONS} seconds per 1,000 sections, once.")
+    return True
+
+def _offer_repair(
+    problem: str,
+    *,
+    interactive: bool,
+    with_embeddings: bool,
+    dry_run: bool,
+    prompt_yn: Callable[[str, bool], bool],
+    out: Callable[[str], None],
+) -> bool:
+    """FastEmbed is installed and its model won't load: report it, repair on consent.
+
+    Same consent rule as the install: ``--with-embeddings`` or a yes at the
+    prompt, never ``--yes``. Returns True only when the model now loads.
+    """
+    if dry_run:
+        out(f"  Semantic search: configured (fastembed), but its model won't load: {problem}")
+        out(f"  With --with-embeddings (or a yes at the prompt) init would download the model ({MODEL_DOWNLOAD_MB} MB).")
+        return False
+    wanted = with_embeddings
+    if not wanted and interactive:
+        out("")
+        wanted = prompt_yn(repair_text(problem), False)
+    if not wanted:
+        out(f"  Semantic search: configured (fastembed), but its model won't load: {problem}")
+        out("  Searches match words only. To repair: jdocmunch-mcp init --with-embeddings")
+        return False
+    out(f"  Downloading the model from huggingface.co ({MODEL_DOWNLOAD_MB} MB, once)...")
+    ok, detail = _download_model()
+    if not ok:
+        out(f"  Could not download the model: {detail}")
+        out("  Continuing with word matching only.")
+        return False
+    problem = _model_problem()
+    if problem:
+        out(f"  The model downloaded but still won't load: {problem}")
+        out("  Continuing with word matching only.")
+        return False
+    out("  Semantic search: on (fastembed). Model repaired. Runs on this machine.")
     return True

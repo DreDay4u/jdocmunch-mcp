@@ -136,9 +136,26 @@ Then, inside your agent:
 
 > Using jdocmunch, search the docs for "authentication configuration" and show me that section.
 
-The agent should call `search_sections`, then `get_section` on the top hit — returning one section rather than a file. `_meta.tokens_saved` on the response reports what that cost versus reading the containing document.
+The agent should call `search_sections`, then `get_section` on the top hit — returning one section rather than a file. `_meta.tokens_saved` on the `get_section` response is a modeled saving: the containing document's size minus the section served (`_meta.savings_basis: "modeled"`). `search_sections` itself earns no credit.
 
 **Next step:** `get_toc_tree` for a structural view of the whole corpus, or `index_repo` to index documentation straight from a GitHub repository.
+
+### Very large folders
+
+An MCP client stops waiting on a tool call after a fixed time. Indexing a folder with tens of thousands of files can take longer than that. On one Windows machine, a full index of 10,000 files (271,585 sections) took 67 s without embeddings, and sentence-transformers embeddings added about 3 minutes.
+
+If a folder is that large, or an `index_local` call times out, index it from a shell:
+
+```bash
+jdocmunch-mcp index-local --path /path/to/folder
+```
+
+The CLI runs the same indexing with no tool timeout. It writes to the same store as the MCP server, so the server uses the index once the command finishes. If you set `DOC_INDEX_PATH` in your client's MCP config, set it in the shell too.
+
+- **Custom names.** If the folder was indexed under a custom name, pass the same `--name`. Without it, the CLI uses the folder name and writes a second index.
+- **The file cap.** A folder is capped at 10,000 files, newest first. Raise it with `--max-files N` (the CLI form of the MCP tool's `max_files`). When a call hits the cap, its warning prints the command with the folder's discovered count.
+- **Narrowing a folder.** Exclude what you don't need with `--extra-ignore-pattern` (repeatable, the CLI form of `extra_ignore_patterns`), or index only listed files with `--paths-from FILE` (the CLI form of `paths`).
+- **Embeddings.** `--no-embeddings` builds a lexical index first. Run the command again later with `--rebuild` to add embeddings.
 
 ---
 
@@ -233,6 +250,19 @@ store, so switching runtimes does not re-embed your corpus. Point FastEmbed at
 a different model with `JDOCMUNCH_FASTEMBED_MODEL` and it keeps its own vectors
 instead, because vectors from two models are not interchangeable
 ([#126](https://github.com/jgravelle/jdocmunch-mcp/issues/126)).
+
+**Where the FastEmbed model lives, and repairing it.** FastEmbed's own default
+folder is `<temp dir>/fastembed_cache`, and OS cleanup can empty it. When the
+model can't load, `index_local` says so in `embedding_provider_error` and a
+warning, and search is word matching until it is fixed. `init` checks the model
+from local files only, without a download. If the model is missing or damaged,
+it offers a repair, and the repair asks for the same consent as the install: a
+yes at the prompt, or `--with-embeddings`. The repair downloads the model
+(87 MB, once) into `~/.cache/jdocmunch-mcp/fastembed`, outside the temp
+directory. The server loads from that folder once the model is there; an
+install whose temp-dir copy works keeps using it and is never re-downloaded.
+`JDOCMUNCH_FASTEMBED_CACHE` names a different folder, and FastEmbed's own
+`FASTEMBED_CACHE_PATH` still takes precedence over both.
 
 **A child process, when local embeddings are in use.** When the
 `sentence-transformers` provider is active, jDocMunch runs the embedding model
