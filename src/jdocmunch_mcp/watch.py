@@ -128,6 +128,19 @@ def _watch_poll_delay_ms() -> int:
     return DEFAULT_WATCH_POLL_DELAY_MS
 
 
+def _inprocess_reindex() -> bool:
+    """Whether reindex batches run on a thread in this process (legacy path).
+
+    The default is a child process per batch, so the batch's peak memory —
+    a full monolith rewrite, however small the change — returns to the OS
+    when the child exits instead of flooring the daemon's RSS (see
+    ``_watch_child``). ``JDOCMUNCH_WATCH_INPROCESS=1`` restores the previous
+    in-process behavior for diagnosis.
+    """
+    raw = os.environ.get("JDOCMUNCH_WATCH_INPROCESS", "")
+    return raw.strip().lower() in ("1", "true", "yes", "on")
+
+
 def _force_polling_default() -> bool:
     """Whether watchfiles will poll when the caller passes ``force_polling=None``.
 
@@ -280,6 +293,38 @@ def _make_watch_filter(doc_exts: set[str], storage_path: str, watched: Optional[
     return _filter
 
 
+def _stored_shape_patterns(storage_path: str, bare: str) -> "list[str] | None":
+    """``corpus_shape_patterns`` from the KB-sized summary sidecar, or None.
+
+    The summary (jdoc#77) is written on every save since v1.77 and carries
+    the patterns. Reading it here keeps the watch parent from json-parsing
+    the whole monolith per batch — tens of MB parsed into ~3x that much
+    resident Python, then retained in ``_INDEX_CACHE`` — just to read a
+    handful of exclusion strings. An absent or unreadable summary (a
+    pre-jdoc#77 index, or a best-effort summary write that failed) returns
+    None and the caller falls back to the full load, which is exactly the
+    pre-summary behavior; a readable summary returns its pattern list even
+    when that list is empty.
+    """
+    try:
+        from .storage.doc_store import DocStore
+
+        summary_path = DocStore(base_path=storage_path)._summary_path("local", bare)
+        if not summary_path.exists():
+            return None
+        import json
+
+        with open(summary_path, "r", encoding="utf-8") as fh:
+            summary = json.load(fh)
+        # Distinguish "summary exists and says there are no patterns" (a
+        # definitive empty list) from "no summary to read" (None): only the
+        # latter falls back to parsing the monolith.
+        return list(summary.get("corpus_shape_patterns") or [])
+    except Exception:
+        logger.debug("watch: summary read failed for %s", bare, exc_info=True)
+        return None
+
+
 def _corpus_filters(root: str, name: str, storage_path: str):
     """Return (gitignore_spec, extra_spec) for a watched root, or (None, None).
 
@@ -306,15 +351,19 @@ def _corpus_filters(root: str, name: str, storage_path: str):
         logger.debug("watch: .gitignore load failed for %s", root, exc_info=True)
     try:
         import pathspec
-        from .storage.doc_store import DocStore
         from .tools.index_local import normalize_local_index_name
 
         # jdoc#165: discovery hands over the durable handle ``local/<name>``,
         # and load_index("local", "local/<name>") found nothing, so the stored
         # patterns were silently skipped on every watcher refresh.
         bare = normalize_local_index_name(name, name)
-        idx = DocStore(base_path=storage_path).load_index("local", bare)
-        patterns = list(getattr(idx, "corpus_shape_patterns", None) or []) if idx else []
+        patterns = _stored_shape_patterns(storage_path, bare)
+        if patterns is None:
+            # No (readable) summary: parse the monolith, the pre-jdoc#77 path.
+            from .storage.doc_store import DocStore
+
+            idx = DocStore(base_path=storage_path).load_index("local", bare)
+            patterns = list(getattr(idx, "corpus_shape_patterns", None) or []) if idx else []
         if patterns:
             extra_spec = pathspec.PathSpec.from_lines("gitignore", patterns)
     except Exception:
@@ -350,6 +399,36 @@ def _owning_root(path: str, roots_map: "dict[str, str]") -> Optional[str]:
     return best
 
 
+async def _reindex_in_subprocess(
+    root: str,
+    name: str,
+    paths: "list[str]",
+    storage_path: str,
+    use_ai_summaries: bool,
+) -> None:
+    """Apply one batch in a child interpreter so its memory returns on exit.
+
+    Same ``index_local`` call the in-process path makes (subset refresh,
+    ``incremental=True``), executed by ``python -m jdocmunch_mcp._watch_child``
+    with the paths on stdin. The child's exit code is the contract: 0 is
+    success, anything else raises with the tail of its stderr so the caller's
+    existing ``except``/WARNING path reports it like an in-process failure.
+    """
+    proc = await asyncio.create_subprocess_exec(
+        sys.executable, "-m", "jdocmunch_mcp._watch_child",
+        root, name, storage_path, "1" if use_ai_summaries else "0",
+        stdin=asyncio.subprocess.PIPE,
+        stdout=asyncio.subprocess.DEVNULL,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    _stdout, stderr = await proc.communicate("\n".join(sorted(paths)).encode("utf-8"))
+    if proc.returncode != 0:
+        tail = stderr.decode("utf-8", errors="replace")[-2000:] if stderr else ""
+        raise RuntimeError(
+            f"_watch_child exited {proc.returncode} for {name}: {tail}"
+        )
+
+
 async def _handle_changes(
     changes,
     roots_map: "dict[str, str]",
@@ -358,8 +437,6 @@ async def _handle_changes(
     quiet: bool,
     log_file_handle: Optional[IO],
 ) -> None:
-    from .tools.index_local import index_local
-
     by_root: "dict[str, set[str]]" = {}
     for _change, path in changes:
         try:
@@ -392,15 +469,26 @@ async def _handle_changes(
         try:
             # Subset refresh (jdoc#31): only the changed paths are re-indexed;
             # unlisted docs are never pruned, a listed-but-deleted file deletes.
-            await asyncio.to_thread(
-                index_local,
-                path=root,
-                name=name,
-                paths=sorted(paths),
-                storage_path=storage_path,
-                use_ai_summaries=use_ai_summaries,
-                incremental=True,
-            )
+            if _inprocess_reindex():
+                from .tools.index_local import index_local
+
+                await asyncio.to_thread(
+                    index_local,
+                    path=root,
+                    name=name,
+                    paths=sorted(paths),
+                    storage_path=storage_path,
+                    use_ai_summaries=use_ai_summaries,
+                    incremental=True,
+                )
+            else:
+                # Default: the batch runs in a child interpreter, so its
+                # peak (a full monolith rewrite however small the change)
+                # returns to the OS on exit instead of flooring this
+                # daemon's RSS.
+                await _reindex_in_subprocess(
+                    root, name, sorted(paths), storage_path, use_ai_summaries,
+                )
             _watcher_output(
                 f"jdocmunch-mcp watch: re-indexed {len(paths)} file(s) in {name}",
                 quiet=quiet, log_file_handle=log_file_handle,

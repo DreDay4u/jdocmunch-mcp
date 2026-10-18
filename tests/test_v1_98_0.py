@@ -78,6 +78,10 @@ class TestOwningRoot:
 
 
 class TestHandleChanges:
+    # These tests pin the ROUTING of changes to owning roots, not the
+    # transport: they spy on index_local in this process, so they force the
+    # legacy in-process branch (the default since the child-isolation change
+    # runs batches in a subprocess the spy cannot see).
     @pytest.mark.asyncio
     async def test_groups_and_reindexes_by_owning_root(self, tmp_path, monkeypatch):
         calls = []
@@ -89,6 +93,7 @@ class TestHandleChanges:
         monkeypatch.setattr(
             "jdocmunch_mcp.tools.index_local.index_local", fake_index_local
         )
+        monkeypatch.setenv("JDOCMUNCH_WATCH_INPROCESS", "1")
 
         root = str(tmp_path)
         roots_map = {root: "local/mydocs"}
@@ -113,6 +118,7 @@ class TestHandleChanges:
             "jdocmunch_mcp.tools.index_local.index_local",
             lambda **kw: calls.append(kw),
         )
+        monkeypatch.setenv("JDOCMUNCH_WATCH_INPROCESS", "1")
         roots_map = {str(tmp_path / "watched"): "local/x"}
         changes = {(1, str(tmp_path / "elsewhere" / "z.md"))}
         await watch_mod._handle_changes(changes, roots_map, "s", False, True, None)
