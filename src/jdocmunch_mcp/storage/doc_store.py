@@ -226,7 +226,35 @@ def _with_index_lock(method):
 # Keyed by path + mtime so the entry auto-invalidates whenever the file changes.
 # Bounded to prevent leaks in long-running MCP servers.
 _INDEX_CACHE_MAXSIZE = 8
+# The count bound alone does not bound the cache: a parsed DocIndex retains
+# ~2.5-2.9x its monolith file size as live Python objects (measured on
+# 25.8k- and 90.3k-section indexes: 19.2 MB file -> 54 MB retained, 80.3 MB
+# file -> 203 MB retained), so eight entries can hold well over a gigabyte in
+# a long-lived serve process. The byte bound below caps what the cache
+# retains ACROSS all entries; LRU order still decides WHO leaves. An entry
+# larger than the whole budget is still kept (the `> 1` guard below): a
+# single huge index must remain usable, not thrash the cache on every load.
+_INDEX_CACHE_SIZE_MULTIPLIER = 3  # measured 2.5-2.9x; round up, evict early
+_INDEX_CACHE_DEFAULT_MAX_BYTES = 512 * 1024 * 1024
 _INDEX_CACHE: "OrderedDict[tuple, DocIndex]" = OrderedDict()
+_INDEX_CACHE_ESTIMATES: "OrderedDict[tuple, int]" = OrderedDict()
+_INDEX_CACHE_BYTES = 0  # running total of the estimates below
+
+
+def _index_cache_max_bytes() -> int:
+    """Byte budget for _INDEX_CACHE, from JDOCMUNCH_INDEX_CACHE_MAX_BYTES.
+
+    Read per insert, not at import, so a test or embedder can retune it in a
+    live process. Values <= 0 disable the byte bound (count bound only) —
+    the escape hatch back to the previous behavior.
+    """
+    raw = os.environ.get("JDOCMUNCH_INDEX_CACHE_MAX_BYTES")
+    if raw:
+        try:
+            return int(raw)
+        except (TypeError, ValueError):
+            pass
+    return _INDEX_CACHE_DEFAULT_MAX_BYTES
 
 
 def _stamp_load_provenance(index, index_path, mtime_ns: int):
@@ -259,12 +287,39 @@ def _index_cache_get(key: tuple):
     return val
 
 
+def _estimate_index_bytes(key: tuple) -> int:
+    """Cheap upper-bound estimate of a cached DocIndex's retained footprint.
+
+    ``stat().st_size`` of the monolith x _INDEX_CACHE_SIZE_MULTIPLIER: one
+    syscall, O(1) whatever the section count, instead of a walk that would
+    itself have to touch every section dict. The multiplier overestimates
+    the measured 2.5-2.9x ratio slightly, so eviction fires on the safe
+    side. An unstattable path (index deleted under a live cache) estimates
+    0, which can only under-bound an already-dead entry.
+    """
+    try:
+        return os.stat(key[0]).st_size * _INDEX_CACHE_SIZE_MULTIPLIER
+    except OSError:
+        return 0
+
+
 def _index_cache_put(key: tuple, value) -> None:
-    """LRU insert — evicts oldest when over capacity."""
+    """LRU insert — evicts oldest when over capacity OR over the byte bound."""
+    global _INDEX_CACHE_BYTES
     _INDEX_CACHE[key] = value
     _INDEX_CACHE.move_to_end(key)
-    while len(_INDEX_CACHE) > _INDEX_CACHE_MAXSIZE:
-        _INDEX_CACHE.popitem(last=False)
+    # A re-put under the same (path, mtime) key replaces the entry; drop the
+    # old estimate so the running total stays honest.
+    _INDEX_CACHE_BYTES -= _INDEX_CACHE_ESTIMATES.pop(key, 0)
+    estimate = _estimate_index_bytes(key)
+    _INDEX_CACHE_ESTIMATES[key] = estimate
+    _INDEX_CACHE_BYTES += estimate
+    max_bytes = _index_cache_max_bytes()
+    while len(_INDEX_CACHE) > _INDEX_CACHE_MAXSIZE or (
+        max_bytes > 0 and _INDEX_CACHE_BYTES > max_bytes and len(_INDEX_CACHE) > 1
+    ):
+        oldest, _value = _INDEX_CACHE.popitem(last=False)
+        _INDEX_CACHE_BYTES -= _INDEX_CACHE_ESTIMATES.pop(oldest, 0)
 
 
 def _file_hash(content: str) -> str:
@@ -296,10 +351,12 @@ def format_repo_at_sha(
 
 def _evict_index_cache(index_path: Path) -> None:
     """Remove all cache entries for a given index path (any mtime)."""
+    global _INDEX_CACHE_BYTES
     path_str = str(index_path)
     stale = [k for k in _INDEX_CACHE if k[0] == path_str]
     for k in stale:
         del _INDEX_CACHE[k]
+        _INDEX_CACHE_BYTES -= _INDEX_CACHE_ESTIMATES.pop(k, 0)
 
 
 def _load_sidecar_vectors(sidecar_path: str) -> dict:
